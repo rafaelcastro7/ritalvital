@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Papa from 'papaparse';
 import type { Municipio } from '@/types/municipio';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import AboutModal from '@/components/dashboard/AboutModal';
 import KpiCards from '@/components/dashboard/KpiCards';
 import RiskMap from '@/components/dashboard/RiskMap';
 import MapLegend from '@/components/dashboard/MapLegend';
