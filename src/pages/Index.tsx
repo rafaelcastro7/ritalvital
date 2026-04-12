@@ -16,6 +16,7 @@ const parseBool = (v: string) => v === 'True' || v === 'true';
 const Index = () => {
   const [data, setData] = useState<Municipio[]>([]);
   const [selected, setSelected] = useState<Municipio | null>(null);
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   useEffect(() => {
     fetch('/data/municipios_riesgo.csv')
@@ -56,7 +57,8 @@ const Index = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <DashboardHeader totalMunicipios={data.length} pipelineDate="2026-04-12" />
+      <DashboardHeader totalMunicipios={data.length} pipelineDate="2026-04-12" onAboutOpen={() => setAboutOpen(true)} />
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       <KpiCards data={data} />
 
       <div className="flex-1 px-6 pb-4 flex flex-col lg:flex-row gap-4">
