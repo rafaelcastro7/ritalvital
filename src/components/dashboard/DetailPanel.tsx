@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { X, AlertTriangle } from 'lucide-react';
 import type { Municipio } from '@/types/municipio';
 import { RISK_COLORS } from '@/types/municipio';
 import RiskBadge from './RiskBadge';
+import PanicButton from './PanicButton';
+import ReportesPanel from './ReportesPanel';
 
 interface Props {
   municipio: Municipio;
@@ -22,6 +25,7 @@ const Bar = ({ label, value }: { label: string; value: number }) => (
 
 const DetailPanel = ({ municipio: m, onClose }: Props) => {
   const lowConf = m.estado_confianza.toLowerCase().includes('baja');
+  const [reportesKey, setReportesKey] = useState(0);
 
   return (
     <div className="bg-card border-l border-border w-full lg:w-96 p-5 overflow-y-auto max-h-[calc(100vh-200px)]">
@@ -70,6 +74,14 @@ const DetailPanel = ({ municipio: m, onClose }: Props) => {
       >
         <div className="font-semibold text-xs mb-1">Recomendación operativa</div>
         {m.recomendacion}
+      </div>
+
+      <div className="mt-5">
+        <PanicButton municipio={m.municipio} onSent={() => setReportesKey((k) => k + 1)} />
+        <div className="mt-4">
+          <div className="font-semibold text-xs mb-1">Reportes ciudadanos recientes</div>
+          <ReportesPanel key={reportesKey} municipio={m.municipio} />
+        </div>
       </div>
     </div>
   );

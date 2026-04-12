@@ -1,10 +1,13 @@
+import UploadPipelineButton from "./UploadPipelineButton";
+
 interface Props {
   totalMunicipios: number;
   pipelineDate: string;
   onAboutOpen?: () => void;
+  onPipelineUploaded?: () => void;
 }
 
-const DashboardHeader = ({ pipelineDate, onAboutOpen }: Props) => (
+const DashboardHeader = ({ pipelineDate, onAboutOpen, onPipelineUploaded }: Props) => (
   <header className="border-b border-border px-6 py-4 flex items-center justify-between flex-wrap gap-3">
     <div>
       <h1 className="text-2xl font-bold tracking-tight">
@@ -19,6 +22,7 @@ const DashboardHeader = ({ pipelineDate, onAboutOpen }: Props) => (
       >
         ℹ️ Acerca de
       </button>
+      <UploadPipelineButton onUploaded={onPipelineUploaded || (() => window.location.reload())} />
       <span className="text-xs bg-secondary text-secondary-foreground px-3 py-1 rounded-full">
         Pipeline: {pipelineDate}
       </span>

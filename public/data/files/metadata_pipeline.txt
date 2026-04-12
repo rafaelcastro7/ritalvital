@@ -1,0 +1,8 @@
+Pipeline ejecutado   : 2026-04-12 00:35:32
+Ventana UNGRD        : 2021-01-01 a 2025-12-31
+Total municipios     : 31
+Imputación pob.      : 0
+Sin eventos rept.    : 1
+Distribución riesgo  : {'Medio': 15, 'Alto': 11, 'Crítico': 3, 'Bajo': 2}
+Fuentes              : DIVIPOLA, DANE proyecciones, REPS (c36g-9fc2), UNGRD
+Nota                 : sin_eventos_reportados=True puede reflejar subregistro.

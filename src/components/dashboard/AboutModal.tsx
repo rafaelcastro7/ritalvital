@@ -91,7 +91,7 @@ const AboutModal = ({ open, onClose }: Props) => {
           <div className="space-y-2">
             {[
               { name: 'DIVIPOLA', inst: 'DANE', what: 'Llave territorial maestra de todos los municipios del país', id: 'cod_municipio' },
-              { name: 'Proyecciones de población', inst: 'DANE', what: 'Normalización de capacidad sanitaria por habitante', id: '2018–2042' },
+              { name: 'Proyecciones de población', inst: 'DANE', what: 'Normalización de capacidad sanitaria por habitante', id: '2018–2035' },
               { name: 'REPS nacional', inst: 'Ministerio de Salud', what: 'Camas habilitadas y sedes activas', id: 'c36g-9fc2' },
               { name: 'Registro de emergencias', inst: 'UNGRD', what: 'Historial de eventos, vías y puentes afectados', id: 'datos.gov.co' },
             ].map((s) => (
@@ -161,7 +161,7 @@ const AboutModal = ({ open, onClose }: Props) => {
           <SectionTitle>¿Qué sigue?</SectionTitle>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
-              { label: 'MVP actual', desc: '31 municipios · Chocó · Datos sintéticos de demostración' },
+              { label: 'MVP actual', desc: '32 municipios · Chocó · Datos oficiales abiertos' },
               { label: 'Fase 2', desc: '32 departamentos · 1.122 municipios · Datos oficiales reales · Actualización periódica' },
               { label: 'Fase 3', desc: 'Integración con sistemas de alerta temprana · API para secretarías de salud' },
             ].map((p) => (
@@ -175,7 +175,7 @@ const AboutModal = ({ open, onClose }: Props) => {
           <div className="relative flex items-center justify-between max-w-xl mx-auto pt-4">
             <div className="absolute top-[calc(1rem+6px)] left-0 right-0 h-px bg-border" />
             {[
-              { label: 'MVP · Chocó · 31 municipios', active: true },
+              { label: 'MVP · Chocó · 32 municipios', active: true },
               { label: 'Fase 2 · 32 deptos · 1.122 mun.', active: false },
               { label: 'Fase 3 · API pública · alertas', active: false },
             ].map((h, i) => (
@@ -237,7 +237,7 @@ const ArchitectureDiagram = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2" style={FADE_IN(220)}>
         {[
           { name: 'DIVIPOLA', sub: 'DANE', detail: 'cod_municipio' },
-          { name: 'Población', sub: 'DANE proyecciones', detail: '2018–2042' },
+          { name: 'Población', sub: 'DANE proyecciones', detail: '2018–2035' },
           { name: 'REPS', sub: 'MinSalud', detail: 'c36g-9fc2' },
           { name: 'Emergencias', sub: 'UNGRD', detail: 'datos.gov.co' },
         ].map((s) => (
