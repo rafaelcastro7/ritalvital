@@ -43,43 +43,31 @@ Abre el navegador en `http://localhost:8501`.
 
 ```
 ruta-vital-ia/
-├── pipeline.py              # ETL + cálculo del IRCA
+├── pipeline.py              # ETL + cálculo del IRCA — descarga Socrata automáticamente
 ├── app.py                   # Dashboard Streamlit
 ├── requirements.txt
 ├── README.md
-├── data/
-│   ├── divipola.csv         # Llave territorial (ejemplo sintético)
-│   ├── poblacion_dane.csv   # Proyecciones de población (ejemplo)
-│   ├── reps_nacional.csv    # Camas habilitadas REPS (ejemplo)
-│   ├── emergencias_ungrd.csv# Eventos históricos UNGRD (ejemplo)
-│   └── choco_municipios.geojson  ← descargar manualmente (ver abajo)
 └── outputs/
     ├── municipios_riesgo.csv
     └── metadata_pipeline.txt
 ```
 
-> **Nota:** Los archivos CSV en `data/` son datos **sintéticos** generados para demostración. Para producción, reemplazarlos con las fuentes oficiales (ver sección siguiente).
+> **No se requieren archivos CSV locales.** `pipeline.py` descarga directamente desde `datos.gov.co`
+> usando la API Socrata. Los datos son 100 % oficiales y en vivo.
 
 ---
 
-## Cómo obtener los datos reales
+## Fuentes oficiales (descarga automática)
 
-| Fuente | Descripción | Cómo obtenerla |
-|--------|-------------|----------------|
-| **DIVIPOLA** | Códigos y nombres de municipios | [datos.gov.co](https://www.datos.gov.co) → buscar "DIVIPOLA" |
-| **Población DANE** | Proyecciones municipales 2018–2035 | [dane.gov.co](https://www.dane.gov.co/index.php/estadisticas-por-tema/demografia-y-poblacion/proyecciones-de-poblacion) |
-| **REPS nacional** | Camas y sedes habilitadas | [datos.gov.co](https://www.datos.gov.co) → identificador `c36g-9fc2` |
-| **UNGRD Emergencias** | Historial de eventos y afectaciones viales | [datos.gov.co](https://www.datos.gov.co) → buscar "Emergencias UNGRD" |
-| **GeoJSON Chocó** | Polígonos municipales para el mapa | [DANE MGNA](https://geoportal.dane.gov.co/geovisores/territorio/consulta-divipola-municipios/) → descargar Chocó en GeoJSON, guardar como `data/choco_municipios.geojson` |
+| Fuente                            | ID Socrata   | Entidad  | Descripción                                    |
+| --------------------------------- | ------------ | -------- | ---------------------------------------------- |
+| REPS Capacidad Instalada          | `s2ru-bqt6`  | MinSalud | Camas habilitadas por IPS/ESE activa           |
+| UNGRD Emergencias 2019–2022       | `wwkg-r6te`  | UNGRD    | Eventos históricos con afectación vial         |
+| UNGRD Emergencias 2023–2024       | `rgre-6ak4`  | UNGRD    | Eventos recientes con coordenadas GPS          |
+| DIVIPOLA (integrado)              | referencia   | DANE     | 32 municipios de Chocó — referencia fija       |
+| Proyecciones población 2018–2035  | referencia   | DANE     | Proyecciones integradas — no API Socrata       |
 
-### Columnas esperadas por el pipeline
-
-| Archivo | Columnas mínimas necesarias |
-|---------|----------------------------|
-| `divipola.csv` | `cod_municipio`, `municipio`, `depto` |
-| `poblacion_dane.csv` | `cod_municipio`, `poblacion` |
-| `reps_nacional.csv` | `codigo_municipio`, `camas_habilitadas`, `estado_habilitacion` |
-| `emergencias_ungrd.csv` | `cod_municipio`, `fecha`, `vias_averiadas`, `puentes_afectados` |
+El pipeline filtra automáticamente a Chocó usando el prefijo DIVIPOLA `27`.
 
 ---
 
