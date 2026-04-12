@@ -4,6 +4,8 @@ import type { Municipio } from '@/types/municipio';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import KpiCards from '@/components/dashboard/KpiCards';
 import RiskMap from '@/components/dashboard/RiskMap';
+import MapLegend from '@/components/dashboard/MapLegend';
+import RiskDistributionChart from '@/components/dashboard/RiskDistributionChart';
 import DetailPanel from '@/components/dashboard/DetailPanel';
 import DataTable from '@/components/dashboard/DataTable';
 import DashboardFooter from '@/components/dashboard/DashboardFooter';
@@ -57,8 +59,12 @@ const Index = () => {
       <KpiCards data={data} />
 
       <div className="flex-1 px-6 pb-4 flex flex-col lg:flex-row gap-4">
-        <div className="flex-1 min-h-[400px] rounded-lg overflow-hidden border border-border">
-          <RiskMap data={data} onSelect={setSelected} selected={selected} />
+        <div className="flex-1 flex flex-col gap-4">
+          <div className="relative flex-1 min-h-[400px] rounded-lg overflow-hidden border border-border">
+            <RiskMap data={data} onSelect={setSelected} selected={selected} />
+            <MapLegend />
+          </div>
+          <RiskDistributionChart data={data} />
         </div>
         {selected && (
           <DetailPanel municipio={selected} onClose={() => setSelected(null)} />
