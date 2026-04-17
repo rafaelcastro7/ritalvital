@@ -419,12 +419,13 @@ export async function runIrcaPipelineNational(
         const lng  = r.longitud ? parseFloat(r.longitud) : undefined;
         const dept = DEPTO_NAMES[codDpto] ?? r.dpto ?? `Depto ${codDpto}`;
         const pob  = POB_OVERRIDE[cod] ?? DEPT_POP_AVG[codDpto] ?? 15000;
-        return {
+        const built: MunBuild = {
           cod, cod_dpto: codDpto, name, nameNorm: normalizeStr(name),
           dept, poblacion: pob, poblacionImputada: !POB_OVERRIDE[cod],
           lat: lat && !isNaN(lat) ? lat : undefined,
           lng: lng && !isNaN(lng) ? lng : undefined,
-        } satisfies MunBuild;
+        };
+        return built;
       })
       .filter((x): x is MunBuild => x !== null);
     log('info', `DIVIPOLA: ${universe.length} municipios cargados (cobertura nacional)`);
