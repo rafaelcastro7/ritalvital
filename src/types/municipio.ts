@@ -2,6 +2,7 @@ export interface Municipio {
   cod_municipio: number;
   municipio: string;
   depto: string;
+  cod_depto: string;          // 2 dígitos DIVIPOLA
   poblacion: number;
   poblacion_imputada: boolean;
   camas_totales: number;
@@ -17,15 +18,22 @@ export interface Municipio {
   nivel_riesgo: 'Bajo' | 'Medio' | 'Alto' | 'Crítico';
   estado_confianza: string;
   recomendacion: string;
+  lat?: number;
+  lng?: number;
 }
 
-export const RISK_COLORS: Record<string, string> = {
-  Bajo: '#2ecc71',
-  Medio: '#f39c12',
-  Alto: '#e67e22',
-  'Crítico': '#c0392b',
+export const RISK_LEVELS = ['Crítico', 'Alto', 'Medio', 'Bajo'] as const;
+export type RiskLevel = (typeof RISK_LEVELS)[number];
+
+/* Tokens semánticos en HSL — coincidir con index.css --risk-* */
+export const RISK_COLORS: Record<RiskLevel, string> = {
+  'Crítico': 'hsl(4, 68%, 46%)',
+  'Alto':    'hsl(24, 80%, 52%)',
+  'Medio':   'hsl(37, 90%, 57%)',
+  'Bajo':    'hsl(145, 63%, 55%)',
 };
 
+/* Subset de coordenadas de Chocó para fallback si DIVIPOLA no trae lat/lng */
 export const COORDS: Record<number, [number, number]> = {
   27001: [5.694, -76.659], 27006: [8.514, -77.011], 27025: [6.044, -76.953],
   27050: [5.750, -76.543], 27073: [5.560, -76.393], 27075: [6.221, -77.395],
