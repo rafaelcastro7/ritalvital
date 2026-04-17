@@ -1,13 +1,13 @@
 /**
  * datasets.ts
- * Catálogo de fuentes, fetch desde datos.gov.co (Socrata) y pipeline IRCA en TypeScript.
+ * Pipeline IRCA con cobertura nacional (32 deptos · 1.122 municipios)
  *
- * IDs verificados en datos.gov.co:
+ * Fuentes Socrata:
  *   DIVIPOLA      → gdxc-w37w  (cod_dpto, cod_mpio, nom_mpio, latitud, longitud)
- *   REPS Capacidad → s2ru-bqt6  (nom_grupo_capacidad, num_cantidad_capacidad_instalada)
- *   UNGRD 2019-22  → wwkg-r6te  (divipola, vias_averiadas, puentes_vehiculares, ...)
- *   UNGRD 2023-24  → rgre-6ak4  (misma estructura + coordenadas GPS)
- *   DANE Pob 2035  → referencia integrada (DANE no expone Socrata API para proyecciones)
+ *   REPS Capacidad → s2ru-bqt6  (camas habilitadas por IPS/ESE)
+ *   UNGRD 2019-22  → wwkg-r6te  (eventos históricos)
+ *   UNGRD 2023-24  → rgre-6ak4  (eventos recientes con GPS)
+ *   DANE Pob 2035  → estimaciones integradas (DANE no expone Socrata)
  */
 
 import type { Municipio } from '@/types/municipio';
@@ -19,13 +19,36 @@ const SOCRATA_BASE = 'https://www.datos.gov.co/resource';
 export const normalizeStr = (s: string) =>
   s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
-const toNum  = (v: string | undefined) => parseFloat(v ?? '0') || 0;
-const toInt  = (v: string | undefined) => parseInt(v ?? '0', 10) || 0;
+const toNum = (v: string | undefined) => parseFloat(v ?? '0') || 0;
+const toInt = (v: string | undefined) => parseInt(v ?? '0', 10) || 0;
 
-// ── Referencia territorial fija — DIVIPOLA Chocó + Proyecciones DANE 2024 ────
+// ── Departamentos de Colombia (33 entidades — 32 deptos + Bogotá) ────────────
+
+export const DEPTO_NAMES: Record<string, string> = {
+  '05': 'Antioquia', '08': 'Atlántico', '11': 'Bogotá D.C.', '13': 'Bolívar',
+  '15': 'Boyacá', '17': 'Caldas', '18': 'Caquetá', '19': 'Cauca', '20': 'Cesar',
+  '23': 'Córdoba', '25': 'Cundinamarca', '27': 'Chocó', '41': 'Huila',
+  '44': 'La Guajira', '47': 'Magdalena', '50': 'Meta', '52': 'Nariño',
+  '54': 'Norte de Santander', '63': 'Quindío', '66': 'Risaralda', '68': 'Santander',
+  '70': 'Sucre', '73': 'Tolima', '76': 'Valle del Cauca', '81': 'Arauca',
+  '85': 'Casanare', '86': 'Putumayo', '88': 'San Andrés y Providencia',
+  '91': 'Amazonas', '94': 'Guainía', '95': 'Guaviare', '97': 'Vaupés', '99': 'Vichada',
+};
+
+// Población departamental aprox (DANE 2024) — usada para imputar municipios sin valor
+const DEPT_POP_AVG: Record<string, number> = {
+  '05': 31000, '08': 30000, '11': 7900000, '13': 22000, '15': 9500, '17': 17000,
+  '18': 23000, '19': 30000, '20': 26000, '23': 56000, '25': 24000, '27': 14000,
+  '41': 23000, '44': 71000, '47': 38000, '50': 33000, '52': 24500, '54': 33000,
+  '63': 50000, '66': 50000, '68': 28000, '70': 32000, '73': 28000, '76': 110000,
+  '81': 38000, '85': 19000, '86': 22000, '88': 31000, '91': 9000, '94': 12500,
+  '95': 30000, '97': 5500, '99': 26000,
+};
+
+// ── Referencia Chocó (mantenida para fallbacks y demos rápidas) ──────────────
 
 export interface MunRef {
-  cod: number;      // DIVIPOLA 5 dígitos
+  cod: number;
   name: string;
   nameNorm: string;
   dept: string;
@@ -66,12 +89,11 @@ export const MUN_CHOCO: MunRef[] = [
   { cod: 27810, name: 'Unión Panamericana',       poblacion: 8900   },
 ].map(m => ({ ...m, dept: 'Chocó', nameNorm: normalizeStr(m.name) }));
 
-const CHOCO_CODES = new Set(MUN_CHOCO.map(m => m.cod));
-const NAME_TO_COD: Record<string, number> = Object.fromEntries(
-  MUN_CHOCO.map(m => [m.nameNorm, m.cod]),
+const POB_OVERRIDE: Record<number, number> = Object.fromEntries(
+  MUN_CHOCO.map(m => [m.cod, m.poblacion]),
 );
 
-/** Datos DANE población como tabla para el drill-down */
+/** DANE pob como tabla (para drill-down legado) */
 export function getDanePobRows(): Record<string, string>[] {
   return MUN_CHOCO.map(m => ({
     cod_municipio:    String(m.cod),
@@ -83,16 +105,16 @@ export function getDanePobRows(): Record<string, string>[] {
   }));
 }
 
-// ── Catálogo de fuentes ───────────────────────────────────────────────────────
+// ── Catálogo de fuentes ──────────────────────────────────────────────────────
 
 export interface DatasetMeta {
-  updatedAt:     string;   // Fecha última actualización de datos
-  createdAt:     string;   // Fecha de creación del conjunto
-  frequency:     string;   // Frecuencia de actualización
-  coverage:      string;   // Cobertura geográfica
-  license:       string;   // Licencia
-  views:         string;   // Vistas aproximadas
-  downloads:     string;   // Descargas aproximadas
+  updatedAt:     string;
+  createdAt:     string;
+  frequency:     string;
+  coverage:      string;
+  license:       string;
+  views:         string;
+  downloads:     string;
   tags:          string[];
   category:      string;
   language:      string;
@@ -109,38 +131,26 @@ export const DATASET_CATALOG = {
     color:       'hsl(200,70%,50%)',
     priorityCols: ['cod_municipio', 'nom_mpio', 'dpto', 'cod_dpto', 'tipo_municipio', 'latitud', 'longitud'],
     meta: {
-      updatedAt:  '24 ene 2025',
-      createdAt:  '13 jul 2016',
-      frequency:  'Semestral',
-      coverage:   'Nacional',
-      license:    'CC BY-SA 4.0',
-      views:      '168 K',
-      downloads:  '228 K',
-      tags:       ['codigo', 'departamento', 'municipio'],
-      category:   'Mapas Nacionales',
-      language:   'Español',
+      updatedAt:  '24 ene 2025', createdAt:  '13 jul 2016', frequency:  'Semestral',
+      coverage:   'Nacional', license:    'CC BY-SA 4.0', views:      '168 K',
+      downloads:  '228 K', tags:       ['codigo', 'departamento', 'municipio'],
+      category:   'Mapas Nacionales', language:   'Español',
     } satisfies DatasetMeta,
   },
   dane_pob: {
     id:          'dane-proyecciones-2035',
     name:        'Proyecciones de Población 2018–2035',
     institution: 'DANE',
-    description: 'Proyecciones municipales por sexo y edad basadas en el Censo Nacional de Población 2018.',
+    description: 'Proyecciones municipales por sexo y edad basadas en el Censo 2018.',
     url:         'https://www.dane.gov.co/index.php/estadisticas-por-tema/demografia-y-poblacion/proyecciones-de-poblacion',
     isReference: true,
     color:       'hsl(180,60%,45%)',
     priorityCols: ['cod_municipio', 'municipio', 'departamento', 'poblacion_2024', 'fuente'],
     meta: {
-      updatedAt:  '2023',
-      createdAt:  '2018',
-      frequency:  'Por Censo (10 años)',
-      coverage:   'Nacional',
-      license:    'CC BY 4.0',
-      views:      'N/A',
-      downloads:  'N/A',
-      tags:       ['poblacion', 'proyecciones', 'municipio', 'censo 2018'],
-      category:   'Demografía y Población',
-      language:   'Español',
+      updatedAt:  '2023', createdAt:  '2018', frequency:  'Por Censo (10 años)',
+      coverage:   'Nacional', license:    'CC BY 4.0', views:      'N/A', downloads:  'N/A',
+      tags:       ['poblacion', 'proyecciones', 'censo 2018'],
+      category:   'Demografía y Población', language:   'Español',
     } satisfies DatasetMeta,
   },
   reps: {
@@ -153,38 +163,26 @@ export const DATASET_CATALOG = {
     color:       'hsl(145,63%,45%)',
     priorityCols: ['municipio', 'nombre_prestador', 'nom_grupo_capacidad', 'nom_descripcion_capacidad', 'num_cantidad_capacidad_instalada', 'departamento'],
     meta: {
-      updatedAt:  'Mensual',
-      createdAt:  '2015',
-      frequency:  'Mensual',
-      coverage:   'Nacional',
-      license:    'CC BY 4.0',
-      views:      '50 K+',
-      downloads:  '80 K+',
-      tags:       ['salud', 'camas', 'IPS', 'ESE', 'capacidad instalada', 'REPS'],
-      category:   'Salud y Protección Social',
-      language:   'Español',
+      updatedAt:  'Mensual', createdAt:  '2015', frequency:  'Mensual',
+      coverage:   'Nacional', license:    'CC BY 4.0', views:      '50 K+', downloads:  '80 K+',
+      tags:       ['salud', 'camas', 'IPS', 'ESE', 'REPS'],
+      category:   'Salud y Protección Social', language:   'Español',
     } satisfies DatasetMeta,
   },
   ungrd_hist: {
     id:          'wwkg-r6te',
     name:        'Emergencias UNGRD 2019–2022',
     institution: 'UNGRD',
-    description: 'Eventos históricos de emergencias con afectación en vías, puentes, viviendas y personas.',
+    description: 'Eventos históricos de emergencias con afectación en vías, puentes, viviendas.',
     url:         'https://www.datos.gov.co/Ambiente-y-Desarrollo-Sostenible/Emergencias-UNGRD/wwkg-r6te/about_data',
     isReference: false,
     color:       'hsl(25,85%,52%)',
     priorityCols: ['fecha', 'municipio', 'divipola', 'evento', 'vias_averiadas', 'puentes_vehiculares', 'puentes_peatonales', 'fallecidos', 'heridos', 'personas'],
     meta: {
-      updatedAt:  '2023',
-      createdAt:  '2019',
-      frequency:  'Anual',
-      coverage:   'Nacional',
-      license:    'CC BY 4.0',
-      views:      '30 K+',
-      downloads:  '45 K+',
-      tags:       ['emergencias', 'desastres', 'UNGRD', 'FNGRD', 'vias', 'inundacion'],
-      category:   'Ambiente y Desarrollo Sostenible',
-      language:   'Español',
+      updatedAt:  '2023', createdAt:  '2019', frequency:  'Anual',
+      coverage:   'Nacional', license:    'CC BY 4.0', views:      '30 K+', downloads:  '45 K+',
+      tags:       ['emergencias', 'desastres', 'UNGRD', 'vias'],
+      category:   'Ambiente y Desarrollo Sostenible', language:   'Español',
     } satisfies DatasetMeta,
   },
   ungrd_recent: {
@@ -197,23 +195,17 @@ export const DATASET_CATALOG = {
     color:       'hsl(10,70%,50%)',
     priorityCols: ['fecha', 'municipio', 'divipola', 'evento', 'vias_averiadas', 'puentes_vehiculares', 'puentes_peatonales', 'fallecidos', 'heridos', 'personas'],
     meta: {
-      updatedAt:  'ene 2025',
-      createdAt:  'ene 2023',
-      frequency:  'Trimestral',
-      coverage:   'Nacional',
-      license:    'CC BY 4.0',
-      views:      '12 K+',
-      downloads:  '18 K+',
-      tags:       ['emergencias', 'desastres', '2023', '2024', 'UNGRD', 'GPS'],
-      category:   'Ambiente y Desarrollo Sostenible',
-      language:   'Español',
+      updatedAt:  'ene 2025', createdAt:  'ene 2023', frequency:  'Trimestral',
+      coverage:   'Nacional', license:    'CC BY 4.0', views:      '12 K+', downloads:  '18 K+',
+      tags:       ['emergencias', 'desastres', '2023', '2024', 'GPS'],
+      category:   'Ambiente y Desarrollo Sostenible', language:   'Español',
     } satisfies DatasetMeta,
   },
 } as const;
 
 export type SourceKey = keyof typeof DATASET_CATALOG;
 
-// ── Fetch Socrata ─────────────────────────────────────────────────────────────
+// ── Fetch Socrata ────────────────────────────────────────────────────────────
 
 async function socrataFetch(
   datasetId: string,
@@ -228,14 +220,13 @@ async function socrataFetch(
   const url = `${SOCRATA_BASE}/${datasetId}.json?${params}`;
   let res: Response;
   try {
-    res = await fetch(url, { headers, signal: AbortSignal.timeout(30_000) });
+    res = await fetch(url, { headers, signal: AbortSignal.timeout(45_000) });
   } catch (e: unknown) {
     const cause = e instanceof Error ? e.message : String(e);
     throw new Error(`Red/CORS al consultar ${datasetId}: ${cause}`);
   }
 
   if (!res.ok) {
-    // Socrata devuelve errores como JSON { code, error, message }
     let detail = '';
     try {
       const json = await res.json() as { message?: string; code?: string };
@@ -249,7 +240,6 @@ async function socrataFetch(
   }
 
   const data = await res.json() as unknown;
-  // A veces la API devuelve un objeto de error con status 200
   if (data && typeof data === 'object' && !Array.isArray(data)) {
     const obj = data as { error?: boolean; message?: string };
     if (obj.error) throw new Error(`Socrata error en ${datasetId}: ${obj.message ?? 'desconocido'}`);
@@ -257,46 +247,32 @@ async function socrataFetch(
   return data as Record<string, string>[];
 }
 
-/** Ejecuta socrataFetch con varias estrategias WHERE en cascada hasta obtener datos */
 async function socrataFetchWithFallback(
   datasetId: string,
   strategies: string[],
   limit = 50_000,
 ): Promise<{ rows: Record<string, string>[]; usedStrategy: number }> {
-  let lastErr: Error = new Error('Sin estrategias definidas');
+  let lastErr: Error = new Error('Sin estrategias');
   for (let i = 0; i < strategies.length; i++) {
     try {
       const rows = await socrataFetch(datasetId, strategies[i], limit);
       return { rows, usedStrategy: i };
     } catch (e: unknown) {
       lastErr = e instanceof Error ? e : new Error(String(e));
-      // Solo intentar siguiente estrategia si es error de query (4xx), no de red
       if (lastErr.message.startsWith('Red/CORS')) break;
     }
   }
   throw lastErr;
 }
 
-// ── Fetchers individuales ────────────────────────────────────────────────────
+// ── Fetchers ────────────────────────────────────────────────────────────────
 
-/**
- * DIVIPOLA — Todos los municipios de Colombia.
- *
- * Se descarga el dataset completo (nacional) para que el módulo de linaje
- * y cualquier extensión futura a otros departamentos funcione sin cambios.
- * El pipeline IRCA filtra a Chocó (cod_dpto='27') de forma interna.
- *
- * @param deptFilter  Opcional: código de departamento para restringir la descarga
- *                    (ej. '27' para Chocó). Por defecto null = Colombia completa.
- */
 export async function fetchDivipola(
   onCount?: (n: number) => void,
   deptFilter?: string | null,
 ): Promise<Record<string, string>[]> {
   const where = deptFilter ? `cod_dpto='${deptFilter}'` : `cod_dpto IS NOT NULL`;
-  const rows  = await socrataFetch('gdxc-w37w', where, 2_000);  // Colombia tiene ~1 122 municipios
-
-  // Calcular código DIVIPOLA completo de 5 dígitos (cod_dpto + cod_mpio cero-padded)
+  const rows = await socrataFetch('gdxc-w37w', where, 2_000);
   const enriched = rows.map(r => ({
     ...r,
     cod_municipio: `${String(r.cod_dpto ?? '').padStart(2, '0')}${String(r.cod_mpio ?? '').padStart(3, '0')}`,
@@ -305,82 +281,40 @@ export async function fetchDivipola(
   return enriched;
 }
 
-/** REPS Capacidad Instalada — filtrado a Chocó */
+/** REPS — TODAS las camas de Colombia (sin filtro Chocó) */
 export async function fetchReps(
   onCount?: (n: number) => void,
 ): Promise<Record<string, string>[]> {
-  // Intentar filtro server-side por departamento + grupo CAMAS
-  let rows: Record<string, string>[] = [];
-  try {
-    rows = await socrataFetch('s2ru-bqt6', `nom_grupo_capacidad='CAMAS' AND departamento='CHOCÓ'`);
-  } catch {
-    /* fallback sin filtro de departamento */
-  }
-  if (rows.length === 0) {
-    rows = await socrataFetch('s2ru-bqt6', `nom_grupo_capacidad='CAMAS'`, 100_000);
-  }
-
-  const filtered = rows.filter(r => {
-    const dept = normalizeStr(r.departamento ?? '');
-    if (dept.includes('choc')) return true;
-    const mun  = normalizeStr(r.municipio ?? r.municipiosededesc ?? '');
-    return mun in NAME_TO_COD;
-  });
-
-  onCount?.(filtered.length);
-  return filtered;
+  const rows = await socrataFetch('s2ru-bqt6', `nom_grupo_capacidad='CAMAS'`, 200_000);
+  onCount?.(rows.length);
+  return rows;
 }
 
-/** Filtra filas de UNGRD a las que pertenecen a Chocó (DIVIPOLA 27xxx) */
-function filterChocoUngrd(rows: Record<string, string>[]): Record<string, string>[] {
-  return rows.filter(r => {
-    const raw = r.divipola ?? r.cod_divipola ?? r.codigo_divipola ?? '';
-    const cod = toInt(raw);
-    if (CHOCO_CODES.has(cod)) return true;
-    // fallback: que empiece con '27' aunque no sea exactamente numérico
-    return String(raw).startsWith('27') && String(raw).length === 5;
-  });
-}
-
-/** UNGRD Histórico 2019–2022 — filtrado a Chocó por DIVIPOLA prefix '27' */
+/** UNGRD Histórico — Colombia entera */
 export async function fetchUngrdHist(
   onCount?: (n: number) => void,
 ): Promise<Record<string, string>[]> {
-  const strategies = [
-    `divipola like '27%'`,
-    `starts_with(divipola, '27')`,
-    `cod_dpto = '27'`,
-    `departamento = 'CHOCÓ'`,
-    `1=1`,  // sin filtro — cliente filtra
-  ];
-  const { rows } = await socrataFetchWithFallback('wwkg-r6te', strategies);
-  const filtered = filterChocoUngrd(rows);
-  onCount?.(filtered.length);
-  return filtered;
+  const strategies = [`divipola IS NOT NULL`, `1=1`];
+  const { rows } = await socrataFetchWithFallback('wwkg-r6te', strategies, 200_000);
+  onCount?.(rows.length);
+  return rows;
 }
 
-/** UNGRD Reciente 2023–2024 — filtrado a Chocó */
+/** UNGRD Reciente — Colombia entera */
 export async function fetchUngrdRecent(
   onCount?: (n: number) => void,
 ): Promise<Record<string, string>[]> {
-  const strategies = [
-    `divipola like '27%'`,
-    `starts_with(divipola, '27')`,
-    `cod_dpto = '27'`,
-    `departamento = 'CHOCÓ'`,
-    `1=1`,  // sin filtro — cliente filtra
-  ];
-  const { rows } = await socrataFetchWithFallback('rgre-6ak4', strategies);
-  const filtered = filterChocoUngrd(rows);
-  onCount?.(filtered.length);
-  return filtered;
+  const strategies = [`divipola IS NOT NULL`, `1=1`];
+  const { rows } = await socrataFetchWithFallback('rgre-6ak4', strategies, 200_000);
+  onCount?.(rows.length);
+  return rows;
 }
 
-// ── Métricas de calidad ──────────────────────────────────────────────────────
+// ── Calidad ──────────────────────────────────────────────────────────────────
 
 export interface QualityMetrics {
-  completeness: number;   // 0–100 %
-  coverage:     number;   // municipios Chocó representados (0–32)
+  completeness: number;
+  coverage:     number;
   rowCount:     number;
   colCount:     number;
 }
@@ -390,7 +324,7 @@ export function computeQuality(
   getCode?: (r: Record<string, string>) => number,
 ): QualityMetrics {
   if (!rows.length) return { completeness: 0, coverage: 0, rowCount: 0, colCount: 0 };
-  const cols  = Object.keys(rows[0]);
+  const cols = Object.keys(rows[0]);
   const total = rows.length * cols.length;
   const filled = rows.reduce(
     (acc, r) => acc + cols.filter(c => r[c] !== undefined && r[c] !== null && r[c] !== '').length,
@@ -398,7 +332,7 @@ export function computeQuality(
   );
   let coverage = 0;
   if (getCode) {
-    const found = new Set(rows.map(getCode).filter(c => CHOCO_CODES.has(c)));
+    const found = new Set(rows.map(getCode).filter(c => c > 0));
     coverage = found.size;
   }
   return {
@@ -409,7 +343,7 @@ export function computeQuality(
   };
 }
 
-// ── Pipeline IRCA ─────────────────────────────────────────────────────────────
+// ── Pipeline IRCA NACIONAL ───────────────────────────────────────────────────
 
 export interface PipelineLog {
   ts:    string;
@@ -443,73 +377,267 @@ function recomendacion(nivel: string): string {
   return 'Monitoreo sin acción inmediata e inclusión en reporte departamental.';
 }
 
-export function runIrcaPipeline(
-  repsRows:        Record<string, string>[],
-  ungrdHistRows:   Record<string, string>[],
+interface MunBuild {
+  cod: number;
+  cod_dpto: string;
+  name: string;
+  nameNorm: string;
+  dept: string;
+  poblacion: number;
+  poblacionImputada: boolean;
+  lat?: number;
+  lng?: number;
+}
+
+/**
+ * Pipeline nacional. Ahora recibe DIVIPOLA opcionalmente — si no llega usa fallback Chocó.
+ */
+export async function runIrcaPipelineNational(
+  divipolaRows: Record<string, string>[],
+  repsRows: Record<string, string>[],
+  ungrdHistRows: Record<string, string>[],
   ungrdRecentRows: Record<string, string>[],
-  addLog: (l: PipelineLog) => void,
-): Municipio[] {
+  addLog: (l: PipelineLog) => void = () => {},
+): Promise<Municipio[]> {
   const log = (level: PipelineLog['level'], msg: string) =>
     addLog({ ts: new Date().toLocaleTimeString('es-CO'), level, msg });
 
-  const ungrdRows = [...ungrdHistRows, ...ungrdRecentRows];
+  log('info', '=== Pipeline IRCA Nacional iniciado ===');
 
-  log('info', '=== Pipeline IRCA iniciado ===');
-  log('info', `REPS: ${repsRows.length} filas (CAMAS, Chocó)`);
-  log('info', `UNGRD hist: ${ungrdHistRows.length} eventos`);
-  log('info', `UNGRD recent: ${ungrdRecentRows.length} eventos`);
-  log('info', `UNGRD total fusionado: ${ungrdRows.length} eventos`);
+  // 1. Universo de municipios
+  let universe: MunBuild[] = [];
 
-  // ── 1. Camas por municipio (join por nombre normalizado) ─────────────────
-  const bedsByNorm: Record<string, number> = {};
-  repsRows.forEach(r => {
-    const mun = normalizeStr(r.municipio ?? r.municipiosededesc ?? '');
-    bedsByNorm[mun] = (bedsByNorm[mun] ?? 0) + toNum(r.num_cantidad_capacidad_instalada);
-  });
+  if (divipolaRows.length > 0) {
+    universe = divipolaRows
+      .map(r => {
+        const codDpto = String(r.cod_dpto ?? '').padStart(2, '0');
+        const codMun  = String(r.cod_mpio ?? '').padStart(3, '0');
+        const cod     = parseInt(`${codDpto}${codMun}`, 10);
+        if (!cod || isNaN(cod)) return null;
+        const name = r.nom_mpio ?? r.municipio ?? `Municipio ${codMun}`;
+        const lat  = r.latitud  ? parseFloat(r.latitud)  : undefined;
+        const lng  = r.longitud ? parseFloat(r.longitud) : undefined;
+        const dept = DEPTO_NAMES[codDpto] ?? r.dpto ?? `Depto ${codDpto}`;
+        const pob  = POB_OVERRIDE[cod] ?? DEPT_POP_AVG[codDpto] ?? 15000;
+        return {
+          cod, cod_dpto: codDpto, name, nameNorm: normalizeStr(name),
+          dept, poblacion: pob, poblacionImputada: !POB_OVERRIDE[cod],
+          lat: lat && !isNaN(lat) ? lat : undefined,
+          lng: lng && !isNaN(lng) ? lng : undefined,
+        } satisfies MunBuild;
+      })
+      .filter((x): x is MunBuild => x !== null);
+    log('info', `DIVIPOLA: ${universe.length} municipios cargados (cobertura nacional)`);
+  } else {
+    universe = MUN_CHOCO.map(m => ({
+      cod: m.cod, cod_dpto: '27', name: m.name, nameNorm: m.nameNorm,
+      dept: 'Chocó', poblacion: m.poblacion, poblacionImputada: false,
+    }));
+    log('warn', `DIVIPOLA no disponible — usando fallback Chocó (${universe.length} municipios)`);
+  }
+
+  if (universe.length === 0) {
+    log('error', 'Universo vacío — abortando');
+    return [];
+  }
+
+  const VALID_CODES = new Set(universe.map(u => u.cod));
+
+  // 2. Camas REPS (join por DIVIPOLA cuando se puede, fallback nombre+depto)
   const bedsByCod: Record<number, number> = {};
-  MUN_CHOCO.forEach(m => { bedsByCod[m.cod] = bedsByNorm[m.nameNorm] ?? 0; });
+  let repsMatched = 0, repsByCode = 0, repsByName = 0;
 
-  const repsCoverage = Object.values(bedsByCod).filter(v => v > 0).length;
-  log('info', `REPS: cobertura en ${repsCoverage}/32 municipios de Chocó`);
-  if (repsCoverage < 10) log('warn', `Baja cobertura REPS — posible desajuste de nombres de municipio`);
+  // Pre-construir índice nombre→cod por departamento
+  const nameDeptIndex = new Map<string, number>();
+  for (const u of universe) {
+    nameDeptIndex.set(`${u.cod_dpto}|${u.nameNorm}`, u.cod);
+  }
+  // Dept name → cod
+  const deptNameToCod = new Map<string, string>();
+  for (const [cod, nom] of Object.entries(DEPTO_NAMES)) {
+    deptNameToCod.set(normalizeStr(nom), cod);
+  }
 
-  // ── 2. Eventos UNGRD por municipio (join por DIVIPOLA) ───────────────────
-  interface Agg { eventos: number; vias: number; puentes: number }
+  repsRows.forEach(r => {
+    const qty = toNum(r.num_cantidad_capacidad_instalada);
+    if (!qty) return;
+
+    // Intento 1: DIVIPOLA directo si existe
+    let cod = toInt(r.cod_municipio ?? r.divipola ?? r.codmunicipio);
+    if (cod && VALID_CODES.has(cod)) {
+      bedsByCod[cod] = (bedsByCod[cod] ?? 0) + qty;
+      repsByCode++; repsMatched++;
+      return;
+    }
+
+    // Intento 2: nombre + departamento
+    const munNorm = normalizeStr(r.municipio ?? r.municipiosededesc ?? '');
+    const deptNorm = normalizeStr(r.departamento ?? '');
+    const codDpto = deptNameToCod.get(deptNorm);
+    if (munNorm && codDpto) {
+      const k = `${codDpto}|${munNorm}`;
+      const found = nameDeptIndex.get(k);
+      if (found) {
+        bedsByCod[found] = (bedsByCod[found] ?? 0) + qty;
+        repsByName++; repsMatched++;
+      }
+    }
+  });
+  log('info', `REPS: ${repsMatched.toLocaleString('es-CO')} filas integradas (${repsByCode} por código + ${repsByName} por nombre)`);
+
+  // 3. Eventos UNGRD
+  const ungrdRows = [...ungrdHistRows, ...ungrdRecentRows];
+  interface Agg { eventos: number; vias: number; puentes: number; coords: [number, number][] }
   const evtByCod: Record<number, Agg> = {};
+
   ungrdRows.forEach(r => {
-    const cod = toInt(r.divipola ?? r.cod_divipola);
-    if (!CHOCO_CODES.has(cod)) return;
-    if (!evtByCod[cod]) evtByCod[cod] = { eventos: 0, vias: 0, puentes: 0 };
+    const raw = r.divipola ?? r.cod_divipola ?? r.codigo_divipola ?? '';
+    const cod = toInt(raw);
+    if (!cod || !VALID_CODES.has(cod)) return;
+    if (!evtByCod[cod]) evtByCod[cod] = { eventos: 0, vias: 0, puentes: 0, coords: [] };
     evtByCod[cod].eventos++;
     evtByCod[cod].vias    += toInt(r.vias_averiadas);
     evtByCod[cod].puentes += toInt(r.puentes_vehiculares) + toInt(r.puentes_peatonales);
+    const lat = parseFloat(r.latitud ?? r.lat ?? '');
+    const lng = parseFloat(r.longitud ?? r.lon ?? r.lng ?? '');
+    if (!isNaN(lat) && !isNaN(lng) && lat !== 0) evtByCod[cod].coords.push([lat, lng]);
   });
-  log('info', `UNGRD: ${Object.keys(evtByCod).length}/32 municipios con eventos registrados`);
+  log('info', `UNGRD: ${Object.keys(evtByCod).length} municipios con eventos registrados`);
 
-  // ── 3. Tabla base ────────────────────────────────────────────────────────
-  const base = MUN_CHOCO.map(m => {
-    const camas   = bedsByCod[m.cod] ?? 0;
-    const evt     = evtByCod[m.cod];
+  // 4. Tabla base
+  const base = universe.map(m => {
+    const camas    = bedsByCod[m.cod] ?? 0;
+    const evt      = evtByCod[m.cod];
     const totalEvt = evt?.eventos ?? 0;
     const sevVial  = totalEvt > 0 ? (evt.vias + evt.puentes) / totalEvt : 0;
     const camas1k  = m.poblacion > 0 ? camas / (m.poblacion / 1000) : 0;
-    return { m, camas, totalEvt, sevVial, camas1k };
+    // Si no había lat/lng en DIVIPOLA, intentar usar promedio de eventos UNGRD
+    let lat = m.lat, lng = m.lng;
+    if ((!lat || !lng) && evt?.coords.length) {
+      lat = evt.coords.reduce((s, c) => s + c[0], 0) / evt.coords.length;
+      lng = evt.coords.reduce((s, c) => s + c[1], 0) / evt.coords.length;
+    }
+    return { m, camas, totalEvt, sevVial, camas1k, lat, lng };
   });
 
-  // ── 4. Percentiles ───────────────────────────────────────────────────────
+  // 5. Percentiles
   const pctlVuln = percentileRanks(base.map(r => r.camas1k)).map(v => 1 - v);
   const pctlExpo = percentileRanks(base.map(r => r.totalEvt));
   const pctlSev  = percentileRanks(base.map(r => r.sevVial));
 
-  // ── 5. Municipio[] ───────────────────────────────────────────────────────
-  const result: Municipio[] = base.map(({ m, camas, totalEvt, sevVial, camas1k }, i) => {
+  // 6. Municipio[]
+  const result: Municipio[] = base.map(({ m, camas, totalEvt, sevVial, camas1k, lat, lng }, i) => {
     const irca  = (pctlVuln[i] + pctlExpo[i] + pctlSev[i]) / 3;
     const nivel = nivelRiesgo(irca);
     const sinEvt = totalEvt === 0;
     return {
       cod_municipio:          m.cod,
       municipio:              m.name,
+      depto:                  m.dept,
+      cod_depto:              m.cod_dpto,
+      poblacion:              m.poblacion,
+      poblacion_imputada:     m.poblacionImputada,
+      camas_totales:          camas,
+      camas_por_1000_hab:     camas1k,
+      total_eventos:          totalEvt,
+      severidad_vial:         sevVial,
+      expuestos:              !sinEvt,
+      sin_eventos_reportados: sinEvt,
+      pctl_vuln_salud:        pctlVuln[i],
+      pctl_exposicion:        pctlExpo[i],
+      pctl_severidad:         pctlSev[i],
+      iraa_score:             irca,
+      nivel_riesgo:           nivel,
+      estado_confianza:       sinEvt || camas === 0 ? 'Baja - validación requerida' : 'Alta',
+      recomendacion:          recomendacion(nivel),
+      lat,
+      lng,
+    };
+  });
+
+  const dist = result.reduce((acc, r) => {
+    acc[r.nivel_riesgo] = (acc[r.nivel_riesgo] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  log('info', `Distribución: Crítico=${dist['Crítico'] ?? 0} · Alto=${dist['Alto'] ?? 0} · Medio=${dist['Medio'] ?? 0} · Bajo=${dist['Bajo'] ?? 0}`);
+  log('info', '=== Pipeline completado ===');
+
+  return result.sort((a, b) => b.iraa_score - a.iraa_score);
+}
+
+/**
+ * Wrapper de retrocompatibilidad — Chocó solamente, mantiene API anterior.
+ * Usado por DatasetManager/legados.
+ */
+export function runIrcaPipeline(
+  repsRows: Record<string, string>[],
+  ungrdHistRows: Record<string, string>[],
+  ungrdRecentRows: Record<string, string>[],
+  addLog: (l: PipelineLog) => void,
+): Municipio[] {
+  // Filtra REPS y UNGRD a Chocó
+  const repsChoco = repsRows.filter(r => {
+    const dept = normalizeStr(r.departamento ?? '');
+    return dept.includes('choc');
+  });
+  const ungrdHistChoco = ungrdHistRows.filter(r => String(r.divipola ?? '').startsWith('27'));
+  const ungrdRecentChoco = ungrdRecentRows.filter(r => String(r.divipola ?? '').startsWith('27'));
+
+  // Sync wrapper: usar pipeline nacional con DIVIPOLA vacío → fallback Chocó
+  let result: Municipio[] = [];
+  void runIrcaPipelineNational([], repsChoco, ungrdHistChoco, ungrdRecentChoco, addLog).then(r => {
+    result = r;
+  });
+  // Como necesita ser síncrono y el pipeline nacional NO usa await internamente,
+  // simplemente lo reimplementamos en línea aquí:
+  const universe = MUN_CHOCO.map(m => ({
+    cod: m.cod, cod_dpto: '27', name: m.name, nameNorm: m.nameNorm,
+    dept: 'Chocó', poblacion: m.poblacion, poblacionImputada: false,
+  }));
+  const VALID = new Set(universe.map(u => u.cod));
+
+  const bedsByCod: Record<number, number> = {};
+  repsChoco.forEach(r => {
+    const qty = toNum(r.num_cantidad_capacidad_instalada);
+    const munNorm = normalizeStr(r.municipio ?? r.municipiosededesc ?? '');
+    const found = universe.find(u => u.nameNorm === munNorm);
+    if (found && qty) bedsByCod[found.cod] = (bedsByCod[found.cod] ?? 0) + qty;
+  });
+
+  interface Agg { eventos: number; vias: number; puentes: number }
+  const evtByCod: Record<number, Agg> = {};
+  [...ungrdHistChoco, ...ungrdRecentChoco].forEach(r => {
+    const cod = toInt(r.divipola);
+    if (!VALID.has(cod)) return;
+    if (!evtByCod[cod]) evtByCod[cod] = { eventos: 0, vias: 0, puentes: 0 };
+    evtByCod[cod].eventos++;
+    evtByCod[cod].vias    += toInt(r.vias_averiadas);
+    evtByCod[cod].puentes += toInt(r.puentes_vehiculares) + toInt(r.puentes_peatonales);
+  });
+
+  const base = universe.map(m => {
+    const camas = bedsByCod[m.cod] ?? 0;
+    const evt = evtByCod[m.cod];
+    const totalEvt = evt?.eventos ?? 0;
+    const sevVial = totalEvt > 0 ? (evt.vias + evt.puentes) / totalEvt : 0;
+    const camas1k = m.poblacion > 0 ? camas / (m.poblacion / 1000) : 0;
+    return { m, camas, totalEvt, sevVial, camas1k };
+  });
+
+  const pctlVuln = percentileRanks(base.map(r => r.camas1k)).map(v => 1 - v);
+  const pctlExpo = percentileRanks(base.map(r => r.totalEvt));
+  const pctlSev  = percentileRanks(base.map(r => r.sevVial));
+
+  result = base.map(({ m, camas, totalEvt, sevVial, camas1k }, i) => {
+    const irca = (pctlVuln[i] + pctlExpo[i] + pctlSev[i]) / 3;
+    const nivel = nivelRiesgo(irca);
+    const sinEvt = totalEvt === 0;
+    return {
+      cod_municipio:          m.cod,
+      municipio:              m.name,
       depto:                  'Chocó',
+      cod_depto:              '27',
       poblacion:              m.poblacion,
       poblacion_imputada:     false,
       camas_totales:          camas,
@@ -527,15 +655,6 @@ export function runIrcaPipeline(
       recomendacion:          recomendacion(nivel),
     };
   });
-
-  const dist = result.reduce((acc, r) => {
-    acc[r.nivel_riesgo] = (acc[r.nivel_riesgo] ?? 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  log('info', `Distribución: Crítico=${dist['Crítico'] ?? 0} · Alto=${dist['Alto'] ?? 0} · Medio=${dist['Medio'] ?? 0} · Bajo=${dist['Bajo'] ?? 0}`);
-  log('info', `Top IRCA: ${[...result].sort((a, b) => b.iraa_score - a.iraa_score).slice(0, 3).map(r => `${r.municipio}(${(r.iraa_score * 100).toFixed(0)})`).join(' › ')}`);
-  log('info', '=== Pipeline completado ===');
 
   return result.sort((a, b) => a.municipio.localeCompare(b.municipio, 'es'));
 }
