@@ -1,106 +1,124 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
+import { Download } from 'lucide-react';
 import type { Municipio } from '@/types/municipio';
+import { useFilters, type SortKey } from '@/context/FilterContext';
 import RiskBadge from './RiskBadge';
 
 interface Props {
-  data: Municipio[];
   onSelect: (m: Municipio) => void;
 }
 
-type SortKey = 'municipio' | 'iraa_score' | 'nivel_riesgo' | 'camas_por_1000_hab' | 'total_eventos' | 'severidad_vial' | 'estado_confianza';
+const COLS: { key: SortKey; label: string }[] = [
+  { key: 'municipio', label: 'Municipio' },
+  { key: 'depto', label: 'Depto' },
+  { key: 'iraa_score', label: 'IRCA' },
+  { key: 'poblacion', label: 'Población' },
+  { key: 'camas_por_1000_hab', label: 'Camas/1k' },
+  { key: 'total_eventos', label: 'Eventos' },
+];
 
-const RISK_ORDER: Record<string, number> = { 'Crítico': 4, Alto: 3, Medio: 2, Bajo: 1 };
-
-const DataTable = ({ data, onSelect }: Props) => {
-  const [filterRisk, setFilterRisk] = useState<string>('');
-  const [onlyLowConf, setOnlyLowConf] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>('iraa_score');
-  const [sortAsc, setSortAsc] = useState(false);
-
-  const filtered = useMemo(() => {
-    let d = [...data];
-    if (filterRisk) d = d.filter(m => m.nivel_riesgo === filterRisk);
-    if (onlyLowConf) d = d.filter(m => m.estado_confianza.toLowerCase().includes('baja'));
-    d.sort((a, b) => {
-      let va: number | string = a[sortKey] as any;
-      let vb: number | string = b[sortKey] as any;
-      if (sortKey === 'nivel_riesgo') { va = RISK_ORDER[va as string] || 0; vb = RISK_ORDER[vb as string] || 0; }
-      if (typeof va === 'string') return sortAsc ? (va as string).localeCompare(vb as string) : (vb as string).localeCompare(va as string);
-      return sortAsc ? (va as number) - (vb as number) : (vb as number) - (va as number);
-    });
-    return d;
-  }, [data, filterRisk, onlyLowConf, sortKey, sortAsc]);
-
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) setSortAsc(!sortAsc);
-    else { setSortKey(key); setSortAsc(false); }
+function downloadCSV(data: Municipio[]) {
+  const headers = [
+    'cod_municipio', 'municipio', 'depto', 'cod_depto', 'poblacion',
+    'camas_totales', 'camas_por_1000_hab', 'total_eventos', 'severidad_vial',
+    'iraa_score', 'nivel_riesgo', 'estado_confianza', 'recomendacion',
+  ];
+  const esc = (v: unknown) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
+  const lines = [
+    headers.join(','),
+    ...data.map(r => headers.map(h => esc((r as unknown as Record<string, unknown>)[h])).join(',')),
+  ];
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `rutavital_municipios_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const DataTable = ({ onSelect }: Props) => {
+  const { filtered, state, setSort } = useFilters();
+
+  // Limitar render a 200 filas para performance — si el usuario quiere más, exporta CSV
+  const display = useMemo(() => filtered.slice(0, 200), [filtered]);
 
   const th = (label: string, key: SortKey) => (
     <th
-      className="text-left px-3 py-2 text-xs font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none whitespace-nowrap"
-      onClick={() => toggleSort(key)}
+      key={key}
+      className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground select-none whitespace-nowrap"
+      onClick={() => setSort(key)}
+      scope="col"
     >
-      {label} {sortKey === key ? (sortAsc ? '↑' : '↓') : ''}
+      {label} {state.sortKey === key ? (state.sortAsc ? '↑' : '↓') : ''}
     </th>
   );
 
   return (
     <div className="px-6 pb-6">
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <select
-          value={filterRisk}
-          onChange={e => setFilterRisk(e.target.value)}
-          className="bg-secondary text-secondary-foreground text-sm rounded-md px-3 py-1.5 border border-border"
+        <h3 className="text-sm font-semibold">Detalle por municipio</h3>
+        <span className="text-xs text-muted-foreground">
+          {filtered.length.toLocaleString('es-CO')} resultados
+          {filtered.length > display.length && ` · mostrando primeros ${display.length}`}
+        </span>
+        <button
+          type="button"
+          onClick={() => downloadCSV(filtered)}
+          disabled={!filtered.length}
+          className="ml-auto flex items-center gap-1.5 text-xs bg-secondary hover:bg-accent text-secondary-foreground px-3 py-1.5 rounded-md transition disabled:opacity-50"
+          title="Descargar resultados filtrados"
         >
-          <option value="">Todos los niveles</option>
-          {['Crítico', 'Alto', 'Medio', 'Bajo'].map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-          <input type="checkbox" checked={onlyLowConf} onChange={e => setOnlyLowConf(e.target.checked)} className="rounded" />
-          Solo baja confianza
-        </label>
-        <span className="text-xs text-muted-foreground ml-auto">{filtered.length} municipios</span>
+          <Download className="w-3.5 h-3.5" />
+          Exportar CSV
+        </button>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="bg-secondary/50">
+          <thead className="bg-secondary/50 sticky top-0 z-10">
             <tr>
-              {th('Municipio', 'municipio')}
-              {th('IRCA', 'iraa_score')}
-              {th('Nivel', 'nivel_riesgo')}
-              {th('Camas/1000', 'camas_por_1000_hab')}
-              {th('Eventos', 'total_eventos')}
-              {th('Sev. vial', 'severidad_vial')}
-              {th('Confianza', 'estado_confianza')}
+              {COLS.map(c => th(c.label, c.key))}
+              <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Nivel</th>
+              <th className="text-left px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Confianza</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map(m => (
+            {display.map(m => (
               <tr
                 key={m.cod_municipio}
                 onClick={() => onSelect(m)}
-                className="border-t border-border hover:bg-accent/50 cursor-pointer transition-colors"
+                className="border-t border-border hover:bg-accent/40 cursor-pointer transition-colors"
               >
-                <td className="px-3 py-2 font-medium">
-                  {m.municipio}{m.poblacion_imputada ? ' *' : ''}
-                </td>
+                <td className="px-3 py-2 font-medium">{m.municipio}{m.poblacion_imputada ? ' *' : ''}</td>
+                <td className="px-3 py-2 text-muted-foreground text-xs">{m.depto}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-16 h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div className="w-14 h-1.5 rounded-full bg-secondary overflow-hidden">
                       <div className="h-full rounded-full bg-primary" style={{ width: `${m.iraa_score * 100}%` }} />
                     </div>
-                    <span className="text-xs">{(m.iraa_score * 100).toFixed(0)}</span>
+                    <span className="text-xs tabular-nums">{(m.iraa_score * 100).toFixed(0)}</span>
                   </div>
                 </td>
+                <td className="px-3 py-2 text-xs tabular-nums">{m.poblacion.toLocaleString('es-CO')}</td>
+                <td className="px-3 py-2 text-xs tabular-nums">{m.camas_por_1000_hab.toFixed(2)}</td>
+                <td className="px-3 py-2 text-xs tabular-nums">{m.total_eventos}</td>
                 <td className="px-3 py-2"><RiskBadge nivel={m.nivel_riesgo} /></td>
-                <td className="px-3 py-2">{m.camas_por_1000_hab.toFixed(2)}</td>
-                <td className="px-3 py-2">{m.total_eventos}</td>
-                <td className="px-3 py-2">{m.severidad_vial.toFixed(1)}</td>
-                <td className="px-3 py-2 text-xs">{m.estado_confianza.includes('Baja') ? '⚠ Baja' : 'Alta'}</td>
+                <td className="px-3 py-2 text-xs">{m.estado_confianza.toLowerCase().includes('baja') ? '⚠ Baja' : 'Alta'}</td>
               </tr>
             ))}
+            {display.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  No hay municipios con los filtros actuales.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
