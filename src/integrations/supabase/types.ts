@@ -14,16 +14,502 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      agent_runs: {
+        Row: {
+          agente: Database["public"]["Enums"]["agent_tipo"]
+          conversacion_id: string | null
+          created_at: string
+          duracion_ms: number | null
+          error: string | null
+          herramientas_usadas: Json
+          id: string
+          input: Json
+          modelo: string
+          output: Json | null
+          status: Database["public"]["Enums"]["run_status"]
+          tokens_in: number | null
+          tokens_out: number | null
+          trigger: string
+          user_id: string | null
+        }
+        Insert: {
+          agente: Database["public"]["Enums"]["agent_tipo"]
+          conversacion_id?: string | null
+          created_at?: string
+          duracion_ms?: number | null
+          error?: string | null
+          herramientas_usadas?: Json
+          id?: string
+          input?: Json
+          modelo: string
+          output?: Json | null
+          status?: Database["public"]["Enums"]["run_status"]
+          tokens_in?: number | null
+          tokens_out?: number | null
+          trigger: string
+          user_id?: string | null
+        }
+        Update: {
+          agente?: Database["public"]["Enums"]["agent_tipo"]
+          conversacion_id?: string | null
+          created_at?: string
+          duracion_ms?: number | null
+          error?: string | null
+          herramientas_usadas?: Json
+          id?: string
+          input?: Json
+          modelo?: string
+          output?: Json | null
+          status?: Database["public"]["Enums"]["run_status"]
+          tokens_in?: number | null
+          tokens_out?: number | null
+          trigger?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_runs_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "conversaciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alertas: {
+        Row: {
+          agent_run_id: string | null
+          created_at: string
+          depto_code: string | null
+          descripcion: string | null
+          fuente: string | null
+          id: string
+          muni_code: string | null
+          payload: Json
+          severidad: Database["public"]["Enums"]["severidad"]
+          tipo: Database["public"]["Enums"]["alerta_tipo"]
+          titulo: string
+          url_fuente: string | null
+        }
+        Insert: {
+          agent_run_id?: string | null
+          created_at?: string
+          depto_code?: string | null
+          descripcion?: string | null
+          fuente?: string | null
+          id?: string
+          muni_code?: string | null
+          payload?: Json
+          severidad: Database["public"]["Enums"]["severidad"]
+          tipo: Database["public"]["Enums"]["alerta_tipo"]
+          titulo: string
+          url_fuente?: string | null
+        }
+        Update: {
+          agent_run_id?: string | null
+          created_at?: string
+          depto_code?: string | null
+          descripcion?: string | null
+          fuente?: string | null
+          id?: string
+          muni_code?: string | null
+          payload?: Json
+          severidad?: Database["public"]["Enums"]["severidad"]
+          tipo?: Database["public"]["Enums"]["alerta_tipo"]
+          titulo?: string
+          url_fuente?: string | null
+        }
+        Relationships: []
+      }
+      conversaciones: {
+        Row: {
+          created_at: string
+          entidad_id: string | null
+          id: string
+          titulo: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          entidad_id?: string | null
+          id?: string
+          titulo?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          entidad_id?: string | null
+          id?: string
+          titulo?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversaciones_entidad_id_fkey"
+            columns: ["entidad_id"]
+            isOneToOne: false
+            referencedRelation: "entidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      entidades: {
+        Row: {
+          api_key_hash: string | null
+          contacto_email: string | null
+          created_at: string
+          depto_code: string | null
+          id: string
+          muni_code: string | null
+          nombre: string
+          tipo: Database["public"]["Enums"]["entidad_tipo"]
+          updated_at: string
+        }
+        Insert: {
+          api_key_hash?: string | null
+          contacto_email?: string | null
+          created_at?: string
+          depto_code?: string | null
+          id?: string
+          muni_code?: string | null
+          nombre: string
+          tipo: Database["public"]["Enums"]["entidad_tipo"]
+          updated_at?: string
+        }
+        Update: {
+          api_key_hash?: string | null
+          contacto_email?: string | null
+          created_at?: string
+          depto_code?: string | null
+          id?: string
+          muni_code?: string | null
+          nombre?: string
+          tipo?: Database["public"]["Enums"]["entidad_tipo"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      irca_snapshots: {
+        Row: {
+          componentes: Json
+          created_at: string
+          depto_code: string
+          depto_nombre: string
+          fecha: string
+          id: string
+          irca_score: number
+          muni_code: string
+          muni_nombre: string
+          nivel: Database["public"]["Enums"]["riesgo_nivel"]
+          pipeline_version: string
+        }
+        Insert: {
+          componentes?: Json
+          created_at?: string
+          depto_code: string
+          depto_nombre: string
+          fecha: string
+          id?: string
+          irca_score: number
+          muni_code: string
+          muni_nombre: string
+          nivel: Database["public"]["Enums"]["riesgo_nivel"]
+          pipeline_version?: string
+        }
+        Update: {
+          componentes?: Json
+          created_at?: string
+          depto_code?: string
+          depto_nombre?: string
+          fecha?: string
+          id?: string
+          irca_score?: number
+          muni_code?: string
+          muni_nombre?: string
+          nivel?: Database["public"]["Enums"]["riesgo_nivel"]
+          pipeline_version?: string
+        }
+        Relationships: []
+      }
+      mensajes: {
+        Row: {
+          content: string
+          conversacion_id: string
+          created_at: string
+          id: string
+          metadata: Json
+          role: Database["public"]["Enums"]["mensaje_role"]
+          tool_calls: Json | null
+          tool_name: string | null
+        }
+        Insert: {
+          content: string
+          conversacion_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          role: Database["public"]["Enums"]["mensaje_role"]
+          tool_calls?: Json | null
+          tool_name?: string | null
+        }
+        Update: {
+          content?: string
+          conversacion_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          role?: Database["public"]["Enums"]["mensaje_role"]
+          tool_calls?: Json | null
+          tool_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mensajes_conversacion_id_fkey"
+            columns: ["conversacion_id"]
+            isOneToOne: false
+            referencedRelation: "conversaciones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          cargo: string | null
+          created_at: string
+          entidad_id: string | null
+          full_name: string | null
+          id: string
+          telefono: string | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          cargo?: string | null
+          created_at?: string
+          entidad_id?: string | null
+          full_name?: string | null
+          id: string
+          telefono?: string | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          cargo?: string | null
+          created_at?: string
+          entidad_id?: string | null
+          full_name?: string | null
+          id?: string
+          telefono?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_entidad_id_fkey"
+            columns: ["entidad_id"]
+            isOneToOne: false
+            referencedRelation: "entidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reportes: {
+        Row: {
+          agent_run_id: string | null
+          created_at: string
+          depto_code: string | null
+          entidad_id: string | null
+          generado_por: string | null
+          id: string
+          metadata: Json
+          muni_code: string | null
+          pdf_url: string | null
+          tipo: Database["public"]["Enums"]["reporte_tipo"]
+          titulo: string
+        }
+        Insert: {
+          agent_run_id?: string | null
+          created_at?: string
+          depto_code?: string | null
+          entidad_id?: string | null
+          generado_por?: string | null
+          id?: string
+          metadata?: Json
+          muni_code?: string | null
+          pdf_url?: string | null
+          tipo?: Database["public"]["Enums"]["reporte_tipo"]
+          titulo: string
+        }
+        Update: {
+          agent_run_id?: string | null
+          created_at?: string
+          depto_code?: string | null
+          entidad_id?: string | null
+          generado_por?: string | null
+          id?: string
+          metadata?: Json
+          muni_code?: string | null
+          pdf_url?: string | null
+          tipo?: Database["public"]["Enums"]["reporte_tipo"]
+          titulo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reportes_entidad_id_fkey"
+            columns: ["entidad_id"]
+            isOneToOne: false
+            referencedRelation: "entidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      suscripciones: {
+        Row: {
+          activa: boolean
+          created_at: string
+          depto_filter: string[] | null
+          email_destino: string
+          entidad_id: string | null
+          id: string
+          muni_filter: string[] | null
+          severidad_minima: Database["public"]["Enums"]["severidad"]
+          tipo_alerta: Database["public"]["Enums"]["alerta_tipo"] | null
+          umbral_irca: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activa?: boolean
+          created_at?: string
+          depto_filter?: string[] | null
+          email_destino: string
+          entidad_id?: string | null
+          id?: string
+          muni_filter?: string[] | null
+          severidad_minima?: Database["public"]["Enums"]["severidad"]
+          tipo_alerta?: Database["public"]["Enums"]["alerta_tipo"] | null
+          umbral_irca?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activa?: boolean
+          created_at?: string
+          depto_filter?: string[] | null
+          email_destino?: string
+          entidad_id?: string | null
+          id?: string
+          muni_filter?: string[] | null
+          severidad_minima?: Database["public"]["Enums"]["severidad"]
+          tipo_alerta?: Database["public"]["Enums"]["alerta_tipo"] | null
+          umbral_irca?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suscripciones_entidad_id_fkey"
+            columns: ["entidad_id"]
+            isOneToOne: false
+            referencedRelation: "entidades"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      validaciones: {
+        Row: {
+          agent_run_id: string | null
+          created_at: string
+          depto_code: string | null
+          descripcion: string
+          fuente: string
+          id: string
+          metadata: Json
+          muni_code: string | null
+          resuelta: boolean
+          severidad: Database["public"]["Enums"]["severidad"]
+          tipo_anomalia: string
+        }
+        Insert: {
+          agent_run_id?: string | null
+          created_at?: string
+          depto_code?: string | null
+          descripcion: string
+          fuente: string
+          id?: string
+          metadata?: Json
+          muni_code?: string | null
+          resuelta?: boolean
+          severidad?: Database["public"]["Enums"]["severidad"]
+          tipo_anomalia: string
+        }
+        Update: {
+          agent_run_id?: string | null
+          created_at?: string
+          depto_code?: string | null
+          descripcion?: string
+          fuente?: string
+          id?: string
+          metadata?: Json
+          muni_code?: string | null
+          resuelta?: boolean
+          severidad?: Database["public"]["Enums"]["severidad"]
+          tipo_anomalia?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      agent_tipo: "vigia" | "analista" | "reportero" | "validador"
+      alerta_tipo:
+        | "delta_irca"
+        | "evento_ungrd"
+        | "brote_sivigila"
+        | "clima_ideam"
+        | "manual"
+      app_role: "admin" | "entidad" | "analista" | "ciudadano"
+      entidad_tipo: "nacional" | "departamental" | "municipal"
+      mensaje_role: "user" | "assistant" | "tool" | "system"
+      reporte_tipo: "ejecutivo" | "tecnico" | "mensual"
+      riesgo_nivel: "Bajo" | "Medio" | "Alto" | "Crítico"
+      run_status: "running" | "success" | "error" | "timeout"
+      severidad: "info" | "baja" | "media" | "alta" | "critica"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +636,22 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      agent_tipo: ["vigia", "analista", "reportero", "validador"],
+      alerta_tipo: [
+        "delta_irca",
+        "evento_ungrd",
+        "brote_sivigila",
+        "clima_ideam",
+        "manual",
+      ],
+      app_role: ["admin", "entidad", "analista", "ciudadano"],
+      entidad_tipo: ["nacional", "departamental", "municipal"],
+      mensaje_role: ["user", "assistant", "tool", "system"],
+      reporte_tipo: ["ejecutivo", "tecnico", "mensual"],
+      riesgo_nivel: ["Bajo", "Medio", "Alto", "Crítico"],
+      run_status: ["running", "success", "error", "timeout"],
+      severidad: ["info", "baja", "media", "alta", "critica"],
+    },
   },
 } as const
