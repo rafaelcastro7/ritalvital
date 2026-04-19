@@ -1,4 +1,6 @@
-import { Database, Wifi, WifiOff, Map, BarChart3 } from 'lucide-react';
+import { Database, Wifi, WifiOff, Map, BarChart3, User, LogIn } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Props {
   totalMunicipios: number;
@@ -13,7 +15,9 @@ interface Props {
 const DashboardHeader = ({
   pipelineDate, isLiveData, totalMunicipios, view, onChangeView,
   onAboutOpen, onDatasetManagerOpen,
-}: Props) => (
+}: Props) => {
+  const { user } = useAuth();
+  return (
   <header className="border-b border-border px-6 py-3 flex items-center justify-between flex-wrap gap-3">
     <div className="flex items-center gap-6">
       <div>
@@ -86,8 +90,18 @@ const DashboardHeader = ({
           {pipelineDate}
         </span>
       )}
+      <Link
+        to={user ? '/cuenta' : '/auth'}
+        className="flex items-center gap-1.5 text-[11px] bg-secondary hover:bg-accent text-secondary-foreground px-2.5 py-1 rounded-full transition"
+        aria-label={user ? 'Mi cuenta' : 'Ingresar'}
+      >
+        {user
+          ? <><User className="w-3 h-3" /> Cuenta</>
+          : <><LogIn className="w-3 h-3" /> Ingresar</>}
+      </Link>
     </div>
   </header>
-);
+  );
+};
 
 export default DashboardHeader;
