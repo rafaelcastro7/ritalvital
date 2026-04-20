@@ -151,6 +151,7 @@ function DashboardInner({
         onAboutOpen={onAboutOpen}
         onDatasetManagerOpen={onDatasetManagerOpen}
       />
+      <AlertasBanner />
 
       {view === 'mapa' ? (
         <>

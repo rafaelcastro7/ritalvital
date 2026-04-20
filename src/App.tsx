@@ -7,6 +7,9 @@ import { AuthProvider } from "@/hooks/useAuth";
 import Index from "./pages/Index.tsx";
 import Auth from "./pages/Auth.tsx";
 import Cuenta from "./pages/Cuenta.tsx";
+import Chat from "./pages/Chat.tsx";
+import Admin from "./pages/Admin.tsx";
+import Reportes from "./pages/Reportes.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -22,6 +25,9 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/cuenta" element={<Cuenta />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="/reportes" element={<Reportes />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
