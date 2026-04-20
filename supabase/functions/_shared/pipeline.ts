@@ -1,5 +1,5 @@
-// Pipeline IRCA simplificado para edge functions.
-// Replica la lógica core de src/lib/datasets.ts pero usando fetch nativo de Deno.
+// Pipeline IRCA optimizado para edge runtime (límite de memoria).
+// Estrategia: paginación + agregación incremental sin retener arrays grandes.
 
 const SOCRATA = "https://www.datos.gov.co/resource";
 
@@ -14,56 +14,36 @@ const DEPTO_NAMES: Record<string, string> = {
   "91": "Amazonas", "94": "Guainía", "95": "Guaviare", "97": "Vaupés", "99": "Vichada",
 };
 
-async function socrata(dataset: string, where: string, limit = 50000) {
-  const url = `${SOCRATA}/${dataset}.json?$where=${encodeURIComponent(where)}&$limit=${limit}`;
+async function socrataPage(dataset: string, where: string, limit: number, offset: number) {
+  const url = `${SOCRATA}/${dataset}.json?$where=${encodeURIComponent(where)}&$limit=${limit}&$offset=${offset}`;
   const r = await fetch(url, { headers: { Accept: "application/json" } });
   if (!r.ok) throw new Error(`Socrata ${dataset}: ${r.status}`);
   return await r.json();
 }
 
-async function tryStrategies(dataset: string, strategies: string[], limit = 50000) {
-  for (const w of strategies) {
-    try {
-      const rows = await socrata(dataset, w, limit);
-      if (Array.isArray(rows) && rows.length) return rows;
-    } catch (_) { /* next */ }
-  }
-  return [];
-}
-
 function muniCode(r: any): string | null {
   const c =
     r.cod_municipio ?? r.codigo_municipio ?? r.cod_mun ??
-    r.municipio_codigo ?? r.cod_mpio ?? r.municipio_cod;
+    r.municipio_codigo ?? r.cod_mpio ?? r.municipio_cod ?? r.codigo_dane;
   if (!c) return null;
-  return String(c).padStart(5, "0");
+  const s = String(c).replace(/\D/g, "");
+  if (!s) return null;
+  return s.padStart(5, "0").slice(-5);
 }
 
 function deptCode(c: string) { return c.slice(0, 2); }
 
 export async function runPipelineNational() {
-  // 1. DIVIPOLA — base oficial
-  const divipola = await tryStrategies("gdxc-w37w", [
-    "1=1",
-  ], 2000);
+  // 1. DIVIPOLA — base oficial (1100 filas, una sola página)
+  const divipola = await socrataPage("gdxc-w37w", "1=1", 2000, 0);
 
-  // 2. REPS — capacidad instalada (camas)
-  const reps = await tryStrategies("s2ru-bqt6", [
-    "grupo='CAMAS'",
-    "grupo_capacidad='CAMAS'",
-    "1=1",
-  ], 100000);
+  const muniMap = new Map<string, {
+    muni_code: string; muni_nombre: string; depto_code: string;
+    depto_nombre: string; poblacion: number; camas: number; eventos: number;
+  }>();
 
-  // 3. UNGRD eventos
-  const ungrd = await tryStrategies("rgre-6ak4", [
-    `fecha >= '${new Date(Date.now() - 1000 * 60 * 60 * 24 * 365).toISOString().slice(0, 10)}'`,
-    "1=1",
-  ], 50000);
-
-  // Construir base municipios
-  const muniMap = new Map<string, any>();
   for (const r of divipola) {
-    const code = muniCode(r) ?? r.codigo_dane?.toString().padStart(5, "0");
+    const code = muniCode(r);
     if (!code || code.length !== 5) continue;
     const dCode = deptCode(code);
     muniMap.set(code, {
@@ -77,39 +57,58 @@ export async function runPipelineNational() {
     });
   }
 
-  // Agregar REPS
-  for (const r of reps) {
-    const code = muniCode(r);
-    if (!code) continue;
-    const m = muniMap.get(code);
-    if (!m) continue;
-    const cap = Number(r.cantidad ?? r.numero_camas ?? r.cantidad_camas ?? 1);
-    m.camas += isFinite(cap) ? cap : 0;
+  // 2. REPS — paginar y agregar incremental (sin retener)
+  const REPS_PAGE = 5000;
+  for (let off = 0; off < 60000; off += REPS_PAGE) {
+    let page: any[];
+    try { page = await socrataPage("s2ru-bqt6", "grupo_capacidad='CAMAS'", REPS_PAGE, off); }
+    catch { break; }
+    if (!Array.isArray(page) || page.length === 0) break;
+    for (const r of page) {
+      const code = muniCode(r);
+      if (!code) continue;
+      const m = muniMap.get(code);
+      if (!m) continue;
+      const cap = Number(r.cantidad ?? r.numero_camas ?? r.cantidad_camas ?? 1);
+      if (isFinite(cap)) m.camas += cap;
+    }
+    if (page.length < REPS_PAGE) break;
   }
 
-  // Agregar UNGRD
-  for (const r of ungrd) {
-    const code = muniCode(r);
-    if (!code) continue;
-    const m = muniMap.get(code);
-    if (!m) continue;
-    m.eventos += 1;
+  // 3. UNGRD — último año, paginar
+  const desde = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+  const UNGRD_PAGE = 5000;
+  for (let off = 0; off < 30000; off += UNGRD_PAGE) {
+    let page: any[];
+    try { page = await socrataPage("rgre-6ak4", `fecha >= '${desde}'`, UNGRD_PAGE, off); }
+    catch { break; }
+    if (!Array.isArray(page) || page.length === 0) break;
+    for (const r of page) {
+      const code = muniCode(r);
+      if (!code) continue;
+      const m = muniMap.get(code);
+      if (!m) continue;
+      m.eventos += 1;
+    }
+    if (page.length < UNGRD_PAGE) break;
   }
 
-  // Calcular IRCA por municipio
-  const arr = Array.from(muniMap.values()).filter((m) => m.poblacion > 0);
-  const camas1k = arr.map((m) => (m.camas / m.poblacion) * 1000);
-  const eventNorm = arr.map((m) => Math.log(1 + m.eventos));
+  // 4. Calcular IRCA (en pase único, sin arrays paralelos)
+  const all = Array.from(muniMap.values()).filter((m) => m.poblacion > 0);
+  let maxC = 0.001, maxE = 0.001;
+  for (const m of all) {
+    const c = (m.camas / m.poblacion) * 1000;
+    if (c > maxC) maxC = c;
+    const e = Math.log(1 + m.eventos);
+    if (e > maxE) maxE = e;
+  }
 
-  const maxC = Math.max(...camas1k, 0.001);
-  const maxE = Math.max(...eventNorm, 0.001);
-
-  const result = arr.map((m, i) => {
-    const vulnerabilidad = 1 - Math.min(1, camas1k[i] / maxC); // 0..1 (1 = peor)
-    const exposicion = Math.min(1, eventNorm[i] / maxE); // 0..1
-    const irca_score = Number(
-      ((vulnerabilidad * 0.6 + exposicion * 0.4) * 100).toFixed(2),
-    );
+  return all.map((m) => {
+    const camas1k = (m.camas / m.poblacion) * 1000;
+    const eventNorm = Math.log(1 + m.eventos);
+    const vulnerabilidad = 1 - Math.min(1, camas1k / maxC);
+    const exposicion = Math.min(1, eventNorm / maxE);
+    const irca_score = Number(((vulnerabilidad * 0.6 + exposicion * 0.4) * 100).toFixed(2));
     let nivel: "Bajo" | "Medio" | "Alto" | "Crítico";
     if (irca_score >= 75) nivel = "Crítico";
     else if (irca_score >= 55) nivel = "Alto";
@@ -127,12 +126,10 @@ export async function runPipelineNational() {
         poblacion: m.poblacion,
         camas: m.camas,
         eventos: m.eventos,
-        camas_por_1000: Number(camas1k[i].toFixed(3)),
+        camas_por_1000: Number(camas1k.toFixed(3)),
         vulnerabilidad: Number(vulnerabilidad.toFixed(3)),
         exposicion: Number(exposicion.toFixed(3)),
       },
     };
   });
-
-  return result;
 }
