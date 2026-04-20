@@ -55,7 +55,8 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = e instanceof Error ? e.message : (typeof e === "object" ? JSON.stringify(e) : String(e));
+    console.error("snapshot-irca error:", msg, e);
     await supabase
       .from("agent_runs")
       .update({ status: "error", error: msg, duracion_ms: Date.now() - t0 })
