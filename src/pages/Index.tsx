@@ -12,6 +12,7 @@ import DataTable from '@/components/dashboard/DataTable';
 import DashboardFooter from '@/components/dashboard/DashboardFooter';
 import FilterSidebar from '@/components/dashboard/FilterSidebar';
 import ComparativaView from '@/components/dashboard/ComparativaView';
+import AlertasBanner from '@/components/dashboard/AlertasBanner';
 import { FilterProvider, useFilters } from '@/context/FilterContext';
 import {
   fetchDivipola, fetchReps, fetchUngrdHist, fetchUngrdRecent,
