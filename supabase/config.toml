@@ -1,1 +1,16 @@
 project_id = "mfddbmloykhxmndalhvt"
+
+[functions.snapshot-irca]
+verify_jwt = false
+
+[functions.vigia-monitor]
+verify_jwt = false
+
+[functions.validador-cross]
+verify_jwt = false
+
+[functions.chat-analista]
+verify_jwt = true
+
+[functions.reporte-ejecutivo]
+verify_jwt = true
