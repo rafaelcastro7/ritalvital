@@ -1,4 +1,4 @@
-import { Database, Wifi, WifiOff, Map, BarChart3, User, LogIn } from 'lucide-react';
+import { Database, Wifi, WifiOff, Map, BarChart3, User, LogIn, MessageSquare, FileText, Shield } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -90,6 +90,27 @@ const DashboardHeader = ({
           {pipelineDate}
         </span>
       )}
+      <Link
+        to="/chat"
+        className="flex items-center gap-1.5 text-[11px] bg-primary/15 hover:bg-primary/25 text-primary px-2.5 py-1 rounded-full transition font-medium"
+        aria-label="Chat con Analista IA"
+      >
+        <MessageSquare className="w-3 h-3" /> Analista IA
+      </Link>
+      <Link
+        to="/reportes"
+        className="flex items-center gap-1.5 text-[11px] bg-secondary hover:bg-accent text-secondary-foreground px-2.5 py-1 rounded-full transition"
+        aria-label="Reportes ejecutivos"
+      >
+        <FileText className="w-3 h-3" /> Reportes
+      </Link>
+      <Link
+        to="/admin"
+        className="flex items-center gap-1.5 text-[11px] bg-secondary hover:bg-accent text-secondary-foreground px-2.5 py-1 rounded-full transition"
+        aria-label="Panel admin"
+      >
+        <Shield className="w-3 h-3" /> Admin
+      </Link>
       <Link
         to={user ? '/cuenta' : '/auth'}
         className="flex items-center gap-1.5 text-[11px] bg-secondary hover:bg-accent text-secondary-foreground px-2.5 py-1 rounded-full transition"
