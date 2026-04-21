@@ -1,6 +1,6 @@
-// Ingesta de normativa colombiana de salud → embeddings → pgvector
+// Ingesta de normativa colombiana de salud (búsqueda léxica FTS español, sin embeddings)
 // Solo admin. Recibe { docs: [{ norma, titulo, articulo?, contenido, url_fuente? }] }
-// O { preset: "default" } para cargar Resolución 2115/2007, 3100/2019 y Ley 1751/2015 (extractos clave).
+// O { preset: "default" } para cargar Resolución 2115/2007, 3100/2019, Ley 1751/2015 y Decreto 1575/2007.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -10,7 +10,6 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 interface DocChunk {
   norma: string;
@@ -22,7 +21,6 @@ interface DocChunk {
 
 // Extractos clave de normativa colombiana de salud — agua potable y derecho a la salud
 const PRESET_DOCS: DocChunk[] = [
-  // Resolución 2115/2007 — Características del agua para consumo humano (IRCA)
   {
     norma: "Resolución 2115/2007",
     titulo: "Características físicas, químicas y microbiológicas del agua para consumo humano",
@@ -51,7 +49,6 @@ const PRESET_DOCS: DocChunk[] = [
     contenido: "Cuando el IRCA mensual sea Riesgo Alto o Inviable Sanitariamente, la autoridad sanitaria departamental o municipal deberá notificar al prestador, a la Superintendencia de Servicios Públicos Domiciliarios y a la Procuraduría General. El prestador debe presentar plan de acción correctivo en un máximo de 30 días calendario y la alcaldía debe garantizar suministro alternativo de agua potable a la población afectada.",
     url_fuente: "https://www.minsalud.gov.co/Normatividad_Nuevo/RESOLUCI%C3%93N%202115%20DE%202007.pdf",
   },
-  // Resolución 3100/2019 — Habilitación de servicios de salud
   {
     norma: "Resolución 3100/2019",
     titulo: "Inscripción en el Registro Especial de Prestadores de Servicios de Salud (REPS)",
@@ -66,7 +63,6 @@ const PRESET_DOCS: DocChunk[] = [
     contenido: "Los servicios ambulatorios deben contar con suministro permanente de agua potable que cumpla con la Resolución 2115/2007, sistema de manejo de residuos según Decreto 351/2014, áreas diferenciadas para atención y procedimientos, y planes de contingencia ante interrupción del suministro. La falta de agua potable es causal de no habilitación.",
     url_fuente: "https://www.minsalud.gov.co/Normatividad_Nuevo/Resoluci%C3%B3n%20No.%203100%20de%202019.pdf",
   },
-  // Ley 1751/2015 — Estatutaria de salud
   {
     norma: "Ley 1751/2015",
     titulo: "Naturaleza y contenido del derecho fundamental a la salud",
@@ -88,7 +84,6 @@ const PRESET_DOCS: DocChunk[] = [
     contenido: "La atención de niños, niñas y adolescentes, mujeres en estado de embarazo, desplazados, víctimas de violencia y del conflicto armado, adultos mayores, personas con discapacidad, enfermedades huérfanas y víctimas de abuso, gozarán de especial protección. La calidad del agua y la prevención de enfermedades de origen hídrico debe priorizarse en territorios con alta concentración de estos grupos.",
     url_fuente: "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=60733",
   },
-  // Decreto 1575/2007 — Sistema para la protección y control de la calidad del agua
   {
     norma: "Decreto 1575/2007",
     titulo: "Vigilancia de la calidad del agua para consumo humano",
@@ -97,24 +92,6 @@ const PRESET_DOCS: DocChunk[] = [
     url_fuente: "https://www.minambiente.gov.co/wp-content/uploads/2021/10/Decreto-1575-de-2007.pdf",
   },
 ];
-
-async function embed(text: string): Promise<number[]> {
-  // Lovable AI Gateway — Gemini embedding 768 dim
-  const r = await fetch("https://ai.gateway.lovable.dev/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/text-embedding-004",
-      input: text,
-    }),
-  });
-  if (!r.ok) throw new Error(`embed failed: ${r.status} ${await r.text()}`);
-  const j = await r.json();
-  return j.data[0].embedding;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -134,17 +111,23 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const docs: DocChunk[] = body.preset === "default" ? PRESET_DOCS : (body.docs ?? []);
+    const replace: boolean = body.replace === true;
     if (!docs.length) return new Response(JSON.stringify({ error: "no docs" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
+    // Si replace=true, limpiar normativas duplicadas (mismas normas)
+    if (replace) {
+      const normas = [...new Set(docs.map(d => d.norma))];
+      await admin.from("normativa_chunks").delete().in("norma", normas);
+    }
+
     const inserted: any[] = [];
     const errors: any[] = [];
 
     for (const d of docs) {
       try {
-        // Texto a embeber: norma + título + artículo + contenido (mejor recuperación)
         const fullText = `${d.norma}. ${d.titulo}. ${d.articulo ?? ""}. ${d.contenido}`;
-        const emb = await embed(fullText);
         const { data, error } = await admin.from("normativa_chunks").insert({
           norma: d.norma,
           titulo: d.titulo,
@@ -152,11 +135,9 @@ Deno.serve(async (req) => {
           contenido: d.contenido,
           url_fuente: d.url_fuente ?? null,
           tokens: Math.ceil(fullText.length / 4),
-          embedding: emb as any,
         }).select("id, norma, articulo").single();
         if (error) throw error;
         inserted.push(data);
-        await new Promise((r) => setTimeout(r, 200)); // rate limit suave
       } catch (e: any) {
         errors.push({ norma: d.norma, articulo: d.articulo, error: e.message });
       }
