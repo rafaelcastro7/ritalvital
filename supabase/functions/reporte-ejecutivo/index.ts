@@ -52,18 +52,7 @@ function htmlReport(opts: {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) return new Response(JSON.stringify({ error: "No auth" }), {
-    status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-  const sbUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: { user } } = await sbUser.auth.getUser();
-  if (!user) return new Response(JSON.stringify({ error: "Unauthorized" }), {
-    status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-
+  // Acceso público sin autenticación
   const { depto_code, depto_nombre } = await req.json();
   if (!depto_code) return new Response(JSON.stringify({ error: "depto_code requerido" }), {
     status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -72,7 +61,7 @@ Deno.serve(async (req) => {
   const t0 = Date.now();
   const { data: run } = await sb.from("agent_runs").insert({
     agente: "reportero", trigger: "reporte-ejecutivo", modelo: "google/gemini-2.5-flash",
-    user_id: user.id, input: { depto_code }, status: "running",
+    user_id: null, input: { depto_code }, status: "running",
   }).select().single();
 
   try {
@@ -125,21 +114,21 @@ Devuelve JSON: { "resumen": "...", "recomendaciones": "- ...\\n- ..." }`;
       recomendaciones: parsed.recomendaciones,
     });
 
-    // Subir HTML al bucket (se puede convertir a PDF cliente con print)
-    const path = `${user.id}/${depto_code}-${fecha}-${Date.now()}.html`;
+    // Subir HTML al bucket público
+    const path = `publico/${depto_code}-${fecha}-${Date.now()}.html`;
     const { error: upErr } = await sb.storage.from("reportes").upload(path, html, {
       contentType: "text/html", upsert: true,
     });
     if (upErr) throw upErr;
 
-    const { data: signed } = await sb.storage.from("reportes").createSignedUrl(path, 60 * 60 * 24 * 7);
+    const { data: pub } = sb.storage.from("reportes").getPublicUrl(path);
 
     const { data: rep } = await sb.from("reportes").insert({
       tipo: "ejecutivo",
       titulo: `Reporte ejecutivo — ${depto_nombre ?? depto_code} (${fecha})`,
       depto_code,
-      pdf_url: signed?.signedUrl ?? path,
-      generado_por: user.id,
+      pdf_url: pub?.publicUrl ?? path,
+      generado_por: null,
       agent_run_id: run!.id,
       metadata: { fecha, stats, top_count: top.length },
     }).select().single();
@@ -149,7 +138,7 @@ Devuelve JSON: { "resumen": "...", "recomendaciones": "- ...\\n- ..." }`;
       duracion_ms: Date.now() - t0,
     }).eq("id", run!.id);
 
-    return new Response(JSON.stringify({ ok: true, reporte: rep, url: signed?.signedUrl }), {
+    return new Response(JSON.stringify({ ok: true, reporte: rep, url: pub?.publicUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

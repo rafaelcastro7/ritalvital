@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Activity, AlertTriangle, FileText, ShieldCheck, Loader2, Play, BookOpen } from "lucide-react";
@@ -14,27 +13,13 @@ interface Run {
 }
 
 export default function Admin() {
-  const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [alertas, setAlertas] = useState<any[]>([]);
   const [validaciones, setValidaciones] = useState<any[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/auth");
-  }, [user, loading, navigate]);
-
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
-      const adm = (data ?? []).some((r) => r.role === "admin");
-      setIsAdmin(adm);
-      if (adm) refresh();
-    })();
-  }, [user]);
+  useEffect(() => { refresh(); }, []);
 
   const refresh = async () => {
     const [r, a, v] = await Promise.all([
@@ -61,38 +46,6 @@ export default function Admin() {
     }
   };
 
-  const becomeAdmin = async () => {
-    // Solo permitido si NO existe ningún admin todavía (bootstrap)
-    const { count } = await supabase.from("user_roles").select("*", { count: "exact", head: true }).eq("role", "admin");
-    if ((count ?? 0) > 0) {
-      toast.error("Ya existe un admin. Pídele que te asigne el rol.");
-      return;
-    }
-    const { error } = await supabase.from("user_roles").insert({ user_id: user!.id, role: "admin" });
-    if (error) toast.error(error.message);
-    else { toast.success("Eres admin"); window.location.reload(); }
-  };
-
-  if (loading || isAdmin === null) return <div className="p-8 text-muted-foreground">Cargando…</div>;
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-background p-8">
-        <Button variant="ghost" onClick={() => navigate("/")} className="mb-4">
-          <ArrowLeft className="w-4 h-4 mr-1" /> Volver
-        </Button>
-        <Card className="p-6 max-w-md mx-auto text-center">
-          <ShieldCheck className="w-10 h-10 mx-auto text-primary mb-2" />
-          <h2 className="text-lg font-bold">Panel restringido</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            Solo administradores pueden acceder. Si eres el primer usuario, puedes auto-asignarte el rol.
-          </p>
-          <Button onClick={becomeAdmin}>Auto-asignarme admin (solo si nadie lo es)</Button>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="flex items-center justify-between mb-6">
@@ -100,7 +53,11 @@ export default function Admin() {
           <Button variant="ghost" onClick={() => navigate("/")}>
             <ArrowLeft className="w-4 h-4 mr-1" /> Volver
           </Button>
-          <h1 className="text-2xl font-bold">Panel de Agentes</h1>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-primary" />
+            <h1 className="text-2xl font-bold">Panel de Agentes</h1>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">Acceso libre</span>
+          </div>
         </div>
         <Button variant="outline" onClick={refresh}>Refrescar</Button>
       </div>
