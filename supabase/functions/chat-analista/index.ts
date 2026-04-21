@@ -195,32 +195,16 @@ async function execTool(name: string, args: any) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Validar JWT
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return new Response(JSON.stringify({ error: "No auth" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-  const sbUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: { user } } = await sbUser.auth.getUser();
-  if (!user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
+  // Acceso público sin autenticación
   const body = await req.json();
   const { conversacion_id, message } = body;
   let convId = conversacion_id;
 
-  // Crear conversación si no existe
+  // Crear conversación si no existe (sin user_id)
   if (!convId) {
     const { data: c } = await sb
       .from("conversaciones")
-      .insert({ user_id: user.id, titulo: message.slice(0, 60) })
+      .insert({ user_id: null, titulo: message.slice(0, 60) })
       .select()
       .single();
     convId = c!.id;
@@ -252,7 +236,7 @@ Deno.serve(async (req) => {
   const t0 = Date.now();
   const { data: run } = await sb.from("agent_runs").insert({
     agente: "analista", trigger: "chat", modelo: MODEL,
-    user_id: user.id, conversacion_id: convId,
+    user_id: null, conversacion_id: convId,
     input: { message }, status: "running",
   }).select().single();
 
