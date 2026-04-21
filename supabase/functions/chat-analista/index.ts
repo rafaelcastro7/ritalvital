@@ -11,6 +11,7 @@ const SYSTEM_PROMPT = `Eres "Analista RutaVital", copiloto agéntico de salud p�
 Tu fuente única de verdad son las herramientas. NUNCA inventes cifras: si no tienes el dato, llama a la herramienta.
 Hablas en español, conciso, con bullets y tablas cortas. Cita siempre el municipio + código DIVIPOLA y la fecha del snapshot.
 Cuando expongas riesgo, distingue entre: vulnerabilidad sanitaria (camas/1000 hab), exposición (eventos UNGRD) e IRCA compuesto.
+Cuando hagas recomendaciones normativas o regulatorias, llama PRIMERO a buscar_normativa y CITA el artículo exacto (norma + artículo + URL fuente). No inventes referencias normativas.
 No reemplazas criterio humano: termina recomendaciones con "validar con el equipo territorial".`;
 
 const TOOLS = [
@@ -84,6 +85,22 @@ const TOOLS = [
           severidad_minima: { type: "string", enum: ["baja", "media", "alta", "critica"] },
           limit: { type: "number" },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "buscar_normativa",
+      description: "Busca artículos de normativa colombiana de salud (Resolución 2115/2007 IRCA, Resolución 3100/2019 habilitación, Ley 1751/2015 derecho a la salud, Decreto 1575/2007 vigilancia agua). Úsala antes de citar normas o hacer recomendaciones regulatorias.",
+      parameters: {
+        type: "object",
+        properties: {
+          consulta: { type: "string", description: "Términos a buscar (p.ej. 'IRCA riesgo alto acciones', 'agua potable habilitación', 'derecho fundamental salud')." },
+          norma: { type: "string", description: "Filtrar por una norma específica (opcional)." },
+          n: { type: "number", description: "Cantidad máx de artículos (default 3)." },
+        },
+        required: ["consulta"],
       },
     },
   },
@@ -161,6 +178,15 @@ async function execTool(name: string, args: any) {
       q = q.in("severidad", ord.slice(min));
     }
     const { data } = await q.limit(args.limit ?? 20);
+    return { items: data ?? [] };
+  }
+  if (name === "buscar_normativa") {
+    const { data, error } = await sb.rpc("buscar_normativa_fts", {
+      query_text: args.consulta,
+      match_count: Math.min(10, args.n ?? 3),
+      filter_norma: args.norma ?? null,
+    });
+    if (error) return { error: error.message, items: [] };
     return { items: data ?? [] };
   }
   return { error: `Herramienta desconocida: ${name}` };

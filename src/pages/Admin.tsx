@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Activity, AlertTriangle, FileText, ShieldCheck, Loader2, Play } from "lucide-react";
+import { ArrowLeft, Activity, AlertTriangle, FileText, ShieldCheck, Loader2, Play, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 
 interface Run {
@@ -105,12 +105,13 @@ export default function Admin() {
         <Button variant="outline" onClick={refresh}>Refrescar</Button>
       </div>
 
-      <div className="grid md:grid-cols-4 gap-3 mb-6">
+      <div className="grid md:grid-cols-5 gap-3 mb-6">
         {[
           { fn: "snapshot-irca", label: "Snapshot IRCA", icon: Activity, color: "text-primary" },
           { fn: "vigia-monitor", label: "Agente Vigía", icon: AlertTriangle, color: "text-amber-500" },
           { fn: "validador-cross", label: "Agente Validador", icon: ShieldCheck, color: "text-emerald-500" },
           { fn: "reporte-ejecutivo", label: "Reporte (Chocó)", icon: FileText, color: "text-violet-500", body: { depto_code: "27", depto_nombre: "Chocó" } },
+          { fn: "ingestar-normativa", label: "Cargar normativa", icon: BookOpen, color: "text-sky-500", body: { preset: "default", replace: true } },
         ].map((b) => (
           <Card key={b.fn} className="p-4">
             <div className="flex items-center gap-2 mb-2">
