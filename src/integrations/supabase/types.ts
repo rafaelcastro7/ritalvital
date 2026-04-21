@@ -284,6 +284,7 @@ export type Database = {
           id: string
           metadata: Json
           norma: string
+          search_tsv: unknown
           titulo: string
           tokens: number | null
           url_fuente: string | null
@@ -296,6 +297,7 @@ export type Database = {
           id?: string
           metadata?: Json
           norma: string
+          search_tsv?: unknown
           titulo: string
           tokens?: number | null
           url_fuente?: string | null
@@ -308,6 +310,7 @@ export type Database = {
           id?: string
           metadata?: Json
           norma?: string
+          search_tsv?: unknown
           titulo?: string
           tokens?: number | null
           url_fuente?: string | null
@@ -526,6 +529,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      buscar_normativa_fts: {
+        Args: {
+          filter_norma?: string
+          match_count?: number
+          query_text: string
+        }
+        Returns: {
+          articulo: string
+          contenido: string
+          id: string
+          norma: string
+          rank: number
+          titulo: string
+          url_fuente: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
