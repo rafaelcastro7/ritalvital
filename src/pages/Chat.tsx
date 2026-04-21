@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -23,7 +22,6 @@ interface Conv {
 }
 
 export default function Chat() {
-  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [convs, setConvs] = useState<Conv[]>([]);
   const [convId, setConvId] = useState<string | null>(null);
@@ -33,18 +31,13 @@ export default function Chat() {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!loading && !user) navigate("/auth");
-  }, [user, loading, navigate]);
-
-  useEffect(() => {
-    if (!user) return;
     supabase
       .from("conversaciones")
       .select("id,titulo,updated_at")
       .order("updated_at", { ascending: false })
       .limit(20)
       .then(({ data }) => setConvs(data ?? []));
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     if (!convId) {
@@ -69,7 +62,6 @@ export default function Chat() {
     setInput("");
     setSending(true);
 
-    // Mensaje optimista
     const optimistic: Mensaje = {
       id: `tmp-${Date.now()}`, role: "user", content: text, created_at: new Date().toISOString(),
     };
@@ -82,11 +74,9 @@ export default function Chat() {
       if (error) throw error;
       const newConvId = data.conversacion_id;
       setConvId(newConvId);
-      // Recargar mensajes
       const { data: msgs } = await supabase
         .from("mensajes").select("*").eq("conversacion_id", newConvId).order("created_at");
       setMensajes((msgs as any) ?? []);
-      // Refrescar lista
       const { data: cs } = await supabase
         .from("conversaciones").select("id,titulo,updated_at").order("updated_at", { ascending: false }).limit(20);
       setConvs(cs ?? []);
@@ -101,8 +91,6 @@ export default function Chat() {
     }
   };
 
-  if (loading) return <div className="p-8 text-muted-foreground">Cargando…</div>;
-
   return (
     <div className="h-screen flex flex-col bg-background">
       <header className="border-b border-border px-4 py-3 flex items-center gap-3">
@@ -111,7 +99,7 @@ export default function Chat() {
         </Button>
         <div>
           <h1 className="font-bold text-lg">Analista RutaVital</h1>
-          <p className="text-xs text-muted-foreground">Copiloto agéntico de salud pública</p>
+          <p className="text-xs text-muted-foreground">Copiloto agéntico de salud pública · Acceso libre</p>
         </div>
       </header>
 
@@ -151,7 +139,7 @@ export default function Chat() {
                     "¿Cuáles son los 10 municipios con mayor IRCA hoy?",
                     "Compara Quibdó, Tumaco y Buenaventura",
                     "Muéstrame la tendencia de IRCA en Riosucio (Chocó)",
-                    "¿Qué alertas críticas hay en Chocó esta semana?",
+                    "¿Qué obligaciones tiene la alcaldía si IRCA es alto? Cita la norma",
                   ].map((p) => (
                     <button
                       key={p}

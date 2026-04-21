@@ -10,7 +10,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.chat-analista]
-verify_jwt = true
+verify_jwt = false
 
 [functions.reporte-ejecutivo]
-verify_jwt = true
+verify_jwt = false
+
+[functions.ingestar-normativa]
+verify_jwt = false

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, FileText, Loader2, Download } from "lucide-react";
@@ -15,16 +14,11 @@ const DEPTOS: { code: string; name: string }[] = [
 ];
 
 export default function Reportes() {
-  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [reportes, setReportes] = useState<any[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/auth");
-  }, [user, loading, navigate]);
-
-  useEffect(() => { if (user) load(); }, [user]);
+  useEffect(() => { load(); }, []);
 
   const load = async () => {
     const { data } = await supabase
@@ -47,8 +41,6 @@ export default function Reportes() {
     } finally { setBusy(null); }
   };
 
-  if (loading) return <div className="p-8 text-muted-foreground">Cargando…</div>;
-
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="flex items-center justify-between mb-6">
@@ -58,7 +50,7 @@ export default function Reportes() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold">Reportes ejecutivos</h1>
-            <p className="text-sm text-muted-foreground">Generados por el Agente Reportero (IA)</p>
+            <p className="text-sm text-muted-foreground">Generados por el Agente Reportero (IA) · Acceso libre</p>
           </div>
         </div>
       </div>
@@ -79,9 +71,9 @@ export default function Reportes() {
       </Card>
 
       <Card className="p-4">
-        <h3 className="font-bold mb-3">Mis reportes ({reportes.length})</h3>
+        <h3 className="font-bold mb-3">Reportes recientes ({reportes.length})</h3>
         {reportes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aún no has generado reportes.</p>
+          <p className="text-sm text-muted-foreground">Aún no se han generado reportes.</p>
         ) : (
           <div className="space-y-2">
             {reportes.map((r) => (
