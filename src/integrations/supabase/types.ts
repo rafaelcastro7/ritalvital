@@ -275,6 +275,45 @@ export type Database = {
           },
         ]
       }
+      normativa_chunks: {
+        Row: {
+          articulo: string | null
+          contenido: string
+          created_at: string
+          embedding: string | null
+          id: string
+          metadata: Json
+          norma: string
+          titulo: string
+          tokens: number | null
+          url_fuente: string | null
+        }
+        Insert: {
+          articulo?: string | null
+          contenido: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          metadata?: Json
+          norma: string
+          titulo: string
+          tokens?: number | null
+          url_fuente?: string | null
+        }
+        Update: {
+          articulo?: string | null
+          contenido?: string
+          created_at?: string
+          embedding?: string | null
+          id?: string
+          metadata?: Json
+          norma?: string
+          titulo?: string
+          tokens?: number | null
+          url_fuente?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -493,6 +532,22 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      match_normativa: {
+        Args: {
+          filter_norma?: string
+          match_count?: number
+          query_embedding: string
+        }
+        Returns: {
+          articulo: string
+          contenido: string
+          id: string
+          norma: string
+          similarity: number
+          titulo: string
+          url_fuente: string
+        }[]
       }
     }
     Enums: {
