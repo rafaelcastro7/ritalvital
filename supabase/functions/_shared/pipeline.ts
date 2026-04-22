@@ -28,6 +28,8 @@ function norm(s: string): string {
   return (s || "")
     .toUpperCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/\bD\s*\.?\s*C\.?\b/g, "")     // quitar D.C., DC
+    .replace(/\bDE\b|\bDEL\b|\bLA\b|\bLAS\b|\bEL\b|\bLOS\b/g, "") // quitar artículos
     .replace(/[^A-Z0-9 ]/g, "")
     .replace(/\s+/g, " ")
     .trim();
