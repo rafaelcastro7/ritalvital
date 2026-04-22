@@ -33,11 +33,16 @@ export default function Reportes() {
         body: { depto_code, depto_nombre },
       });
       if (error) throw error;
+      if (data?.ok === false) throw new Error(data.error || "Error desconocido");
       toast.success(`Reporte generado: ${depto_nombre}`);
-      if (data.url) window.open(data.url, "_blank");
+      if (data?.url) window.open(data.url, "_blank");
       await load();
     } catch (e: any) {
-      toast.error("Falló", { description: e.message });
+      const msg = String(e?.message || e);
+      const hint = msg.includes("snapshot") || msg.includes("Pipeline") || msg.includes("departamento")
+        ? "Intenta de nuevo en unos segundos o genera un Snapshot desde /admin."
+        : msg;
+      toast.error("Falló la generación", { description: hint });
     } finally { setBusy(null); }
   };
 
