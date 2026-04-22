@@ -1,5 +1,10 @@
-// Pipeline IRCA v2 — fórmula con umbrales ABSOLUTOS anclados a estándares OMS/MinSalud
-// Refleja la realidad colombiana: ~1.7 camas/1000 hab promedio (OMS recomienda 3.5)
+// Pipeline IRCA v3 — DATOS REALES + UMBRALES ABSOLUTOS
+// Fuentes oficiales:
+//   - DIVIPOLA (gdxc-w37w): catálogo de municipios con código DANE
+//   - BDUA Subsidiado (d7a5-cnra) + Contributivo (tq4m-hmg2): población afiliada (proxy de población real)
+//   - REPS (s2ru-bqt6): camas hospitalarias habilitadas
+//   - UNGRD (rgre-6ak4): eventos de emergencia/desastre por DIVIPOLA
+// Estándares: OMS 3.5 camas/1000 hab. Promedio Colombia: 1.7. Conflicto/dispersión penalizan.
 
 const SOCRATA = "https://www.datos.gov.co/resource";
 
@@ -14,147 +19,187 @@ const DEPTO_NAMES: Record<string, string> = {
   "91": "Amazonas", "94": "Guainía", "95": "Guaviare", "97": "Vaupés", "99": "Vichada",
 };
 
-// Departamentos históricamente con conflicto armado / pobreza extrema (DANE/UARIV)
+// Departamentos con conflicto armado activo / pobreza extrema documentada (UARIV, DNP)
 const DEPTOS_CONFLICTO_ALTO = new Set(["27", "94", "97", "99", "91", "95", "44", "19", "52", "18", "86", "81"]);
-// Departamentos con dispersión rural extrema y barreras de acceso
+// Dispersión rural extrema y barreras geográficas
 const DEPTOS_DISPERSION = new Set(["27", "91", "94", "95", "97", "99", "88", "86"]);
 
-async function socrataPage(dataset: string, params: Record<string, string>) {
-  const qs = Object.entries(params).map(([k, v]) => `$${k}=${encodeURIComponent(v)}`).join("&");
-  const url = `${SOCRATA}/${dataset}.json?${qs}`;
-  const r = await fetch(url, { headers: { Accept: "application/json" } });
-  if (!r.ok) throw new Error(`Socrata ${dataset}: ${r.status}`);
-  return await r.json();
+function norm(s: string): string {
+  return (s || "")
+    .toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9 ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function muniCode(r: any): string | null {
-  const c =
-    r.cod_municipio ?? r.codigo_municipio ?? r.cod_mun ??
-    r.municipio_codigo ?? r.cod_mpio ?? r.municipio_cod ?? r.codigo_dane ??
-    r.cod_mpio_residencia ?? r.codigo_municipio_atencion;
-  if (!c) return null;
-  const s = String(c).replace(/\D/g, "");
-  if (!s) return null;
-  return s.padStart(5, "0").slice(-5);
+async function socrataQuery(dataset: string, soql: string): Promise<any[]> {
+  const url = `${SOCRATA}/${dataset}.json?$query=${encodeURIComponent(soql)}`;
+  const r = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!r.ok) throw new Error(`Socrata ${dataset}: ${r.status} ${await r.text().catch(() => "")}`);
+  const data = await r.json();
+  if (!Array.isArray(data)) throw new Error(`Socrata ${dataset} no devolvió array: ${JSON.stringify(data).slice(0, 200)}`);
+  return data;
 }
 
 interface MuniRow {
-  muni_code: string; muni_nombre: string; depto_code: string;
-  depto_nombre: string; poblacion: number; camas: number; eventos: number;
+  muni_code: string;
+  muni_nombre: string;
+  depto_code: string;
+  depto_nombre: string;
+  poblacion: number;
+  poblacion_imputada: boolean;
+  camas: number;
+  eventos: number;
 }
 
 export async function runPipelineNational() {
-  // 1. DIVIPOLA
-  const divipola = await socrataPage("gdxc-w37w", {
-    select: "codigo_dane,nom_mpio,nom_depto,poblacion",
-    limit: "2000",
-    where: "1=1",
-  }).catch(async () => socrataPage("gdxc-w37w", { limit: "2000", where: "1=1" }));
+  // ============================================================
+  // 1. DIVIPOLA — catálogo oficial de municipios
+  // ============================================================
+  const divipola = await socrataQuery(
+    "gdxc-w37w",
+    "SELECT cod_dpto, dpto, cod_mpio, nom_mpio, latitud, longitud LIMIT 2000"
+  );
 
   const muniMap = new Map<string, MuniRow>();
+  // Index: nombre normalizado → códigos posibles (para matching de BDUA/REPS por nombre)
+  const nombreIndex = new Map<string, string[]>();
+
   for (const r of divipola) {
-    const code = muniCode(r);
-    if (!code || code.length !== 5) continue;
+    const code = String(r.cod_mpio ?? "").padStart(5, "0");
+    if (code.length !== 5 || code === "00000") continue;
     const dCode = code.slice(0, 2);
+    const nombre = String(r.nom_mpio ?? "").trim();
     muniMap.set(code, {
       muni_code: code,
-      muni_nombre: r.nom_mpio ?? r.municipio ?? code,
+      muni_nombre: nombre,
       depto_code: dCode,
-      depto_nombre: DEPTO_NAMES[dCode] ?? r.nom_depto ?? "",
-      poblacion: Number(r.poblacion ?? r.pob_total ?? 0) || 5000,
+      depto_nombre: DEPTO_NAMES[dCode] ?? r.dpto ?? "",
+      poblacion: 0,
+      poblacion_imputada: false,
       camas: 0,
       eventos: 0,
     });
+    const key = `${dCode}|${norm(nombre)}`;
+    if (!nombreIndex.has(key)) nombreIndex.set(key, []);
+    nombreIndex.get(key)!.push(code);
   }
 
-  // 2. REPS — camas
-  try {
-    const reps = await socrataPage("s2ru-bqt6", {
-      select: "cod_municipio,sum(cantidad) as total",
-      group: "cod_municipio",
-      where: "grupo_capacidad='CAMAS'",
-      limit: "5000",
-    });
-    for (const r of reps) {
-      const code = muniCode(r);
-      if (!code) continue;
-      const m = muniMap.get(code);
-      if (!m) continue;
-      m.camas = Number(r.total ?? 0) || 0;
+  // ============================================================
+  // 2. POBLACIÓN — BDUA Subsidiado + Contributivo (matched por nombre)
+  // ============================================================
+  const [bduaSub, bduaCon] = await Promise.all([
+    socrataQuery(
+      "d7a5-cnra",
+      "SELECT dpr_nombre, mnc_nombre, sum(cantidad::number) as total GROUP BY dpr_nombre, mnc_nombre LIMIT 2000"
+    ).catch(() => []),
+    socrataQuery(
+      "tq4m-hmg2",
+      "SELECT dpr_nombre, mnc_nombre, sum(cantidad::number) as total GROUP BY dpr_nombre, mnc_nombre LIMIT 2000"
+    ).catch(() => []),
+  ]);
+
+  // Mapa: nombre_municipio_normalizado → afiliados totales (sub + con)
+  const afiliadosPorNombre = new Map<string, number>();
+  for (const r of [...bduaSub, ...bduaCon]) {
+    const dpto = norm(r.dpr_nombre || "");
+    const muni = norm(r.mnc_nombre || "");
+    if (!muni) continue;
+    const total = Number(r.total) || 0;
+    // Index por nombre+depto y solo nombre (fallback)
+    afiliadosPorNombre.set(`${dpto}|${muni}`, (afiliadosPorNombre.get(`${dpto}|${muni}`) || 0) + total);
+    afiliadosPorNombre.set(muni, (afiliadosPorNombre.get(muni) || 0) + total);
+  }
+
+  // Asignar población a cada muni
+  let imputados = 0;
+  for (const m of muniMap.values()) {
+    const dptoNorm = norm(m.depto_nombre);
+    const muniNorm = norm(m.muni_nombre);
+    const k1 = `${dptoNorm}|${muniNorm}`;
+    let pob = afiliadosPorNombre.get(k1);
+    if (!pob || pob < 100) pob = afiliadosPorNombre.get(muniNorm);
+    if (pob && pob > 100) {
+      // BDUA cubre ~95% en subsidiado y ~85% en contributivo combinados → ajuste mínimo 1.05
+      m.poblacion = Math.round(pob * 1.05);
+    } else {
+      // Imputación conservadora: municipio rural promedio Colombia
+      m.poblacion = 8000;
+      m.poblacion_imputada = true;
+      imputados++;
     }
-  } catch (_) {
-    for (let off = 0; off < 30000; off += 2000) {
-      const page = await socrataPage("s2ru-bqt6", {
-        select: "cod_municipio,cantidad",
-        where: "grupo_capacidad='CAMAS'",
-        limit: "2000",
-        offset: String(off),
-      }).catch(() => []);
-      if (!page.length) break;
-      for (const r of page) {
-        const code = muniCode(r);
-        if (!code) continue;
-        const m = muniMap.get(code);
-        if (!m) continue;
-        m.camas += Number(r.cantidad ?? 1) || 0;
+  }
+  console.log(`Población: ${muniMap.size - imputados} con datos reales, ${imputados} imputados`);
+
+  // ============================================================
+  // 3. CAMAS — REPS (matched por nombre departamento+municipio)
+  // ============================================================
+  const reps = await socrataQuery(
+    "s2ru-bqt6",
+    "SELECT departamento, municipio, sum(num_cantidad_capacidad_instalada::number) as total WHERE nom_grupo_capacidad='CAMAS' GROUP BY departamento, municipio LIMIT 2000"
+  ).catch(() => []);
+
+  for (const r of reps) {
+    const dpto = norm(r.departamento || "");
+    const muni = norm(r.municipio || "");
+    if (!muni) continue;
+    const total = Number(r.total) || 0;
+    // Buscar muni por nombre+depto
+    let asignado = false;
+    for (const m of muniMap.values()) {
+      if (norm(m.muni_nombre) === muni && norm(m.depto_nombre) === dpto) {
+        m.camas += total;
+        asignado = true;
+        break;
       }
-      if (page.length < 2000) break;
+    }
+    if (!asignado) {
+      // Fallback: solo nombre (puede haber colisiones, sumar al primero)
+      for (const m of muniMap.values()) {
+        if (norm(m.muni_nombre) === muni) { m.camas += total; break; }
+      }
     }
   }
 
-  // 3. UNGRD — eventos último año
-  const desde = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
-  try {
-    const ev = await socrataPage("rgre-6ak4", {
-      select: "cod_municipio,count(*) as total",
-      group: "cod_municipio",
-      where: `fecha >= '${desde}'`,
-      limit: "5000",
-    });
-    for (const r of ev) {
-      const code = muniCode(r);
-      if (!code) continue;
-      const m = muniMap.get(code);
-      if (!m) continue;
-      m.eventos = Number(r.total ?? 0) || 0;
-    }
-  } catch (_) {
-    // ignorar
+  // ============================================================
+  // 4. EVENTOS — UNGRD último año por DIVIPOLA
+  // ============================================================
+  const desde = new Date(Date.now() - 365 * 86400000).toISOString();
+  const ungrd = await socrataQuery(
+    "rgre-6ak4",
+    `SELECT codificaci_n_segun_divipola, count(*) as total WHERE fecha >= '${desde}' GROUP BY codificaci_n_segun_divipola LIMIT 5000`
+  ).catch(() => []);
+
+  for (const r of ungrd) {
+    const code = String(r.codificaci_n_segun_divipola ?? "").replace(/\D/g, "").padStart(5, "0").slice(-5);
+    if (code.length !== 5) continue;
+    const m = muniMap.get(code);
+    if (!m) continue;
+    m.eventos = Number(r.total) || 0;
   }
 
+  // ============================================================
+  // 5. FÓRMULA IRCA v3 — UMBRALES ABSOLUTOS (OMS / MinSalud / UARIV)
+  // ============================================================
   const all = Array.from(muniMap.values()).filter((m) => m.poblacion > 0);
-
-  // ================================================================
-  // FÓRMULA IRCA v2 — UMBRALES ABSOLUTOS BASADOS EN REALIDAD COLOMBIANA
-  // ================================================================
-  // Estándar OMS: 3.5 camas/1000 hab. Promedio Colombia: 1.7. Mínimo crítico: 1.0
-  // Eventos UNGRD por 10k hab/año: >5 = exposición alta documentada
-  // ================================================================
 
   return all.map((m) => {
     const camas1k = (m.camas / m.poblacion) * 1000;
     const eventos10k = (m.eventos / m.poblacion) * 10000;
 
     // ----- A. VULNERABILIDAD SANITARIA (0-100) — peso 45% -----
-    // Anclado a OMS: 3.5 camas/1000 = óptimo (0 pts), 0 camas = catastrófico (100 pts)
+    // OMS: 3.5 camas/1000 = óptimo. Colombia promedio: 1.7. Crítico: <0.5
     let vulnerabilidad: number;
-    if (m.camas === 0) {
-      vulnerabilidad = 100; // sin servicios = catastrófico
-    } else if (camas1k >= 3.5) {
-      vulnerabilidad = 0;
-    } else if (camas1k >= 2.0) {
-      vulnerabilidad = 20 + (3.5 - camas1k) * 13.33; // 20-40
-    } else if (camas1k >= 1.0) {
-      vulnerabilidad = 40 + (2.0 - camas1k) * 25;    // 40-65
-    } else if (camas1k >= 0.5) {
-      vulnerabilidad = 65 + (1.0 - camas1k) * 40;    // 65-85
-    } else {
-      vulnerabilidad = 85 + (0.5 - camas1k) * 30;    // 85-100
-    }
+    if (m.camas === 0) vulnerabilidad = 100;
+    else if (camas1k >= 3.5) vulnerabilidad = 0;
+    else if (camas1k >= 2.0) vulnerabilidad = 20 + (3.5 - camas1k) * 13.33;
+    else if (camas1k >= 1.0) vulnerabilidad = 40 + (2.0 - camas1k) * 25;
+    else if (camas1k >= 0.5) vulnerabilidad = 65 + (1.0 - camas1k) * 40;
+    else vulnerabilidad = 85 + (0.5 - camas1k) * 30;
     vulnerabilidad = Math.min(100, Math.max(0, vulnerabilidad));
 
     // ----- B. EXPOSICIÓN A DESASTRES (0-100) — peso 30% -----
-    // UNGRD: >10 eventos/10k hab = catastrófico, >5 = alto, >2 = medio
     let exposicion: number;
     if (eventos10k >= 10) exposicion = 100;
     else if (eventos10k >= 5) exposicion = 70 + (eventos10k - 5) * 6;
@@ -165,29 +210,23 @@ export async function runPipelineNational() {
     exposicion = Math.min(100, exposicion);
 
     // ----- C. CONTEXTO TERRITORIAL (0-100) — peso 25% -----
-    // Penaliza departamentos con conflicto armado documentado o dispersión rural
     let contexto = 0;
     if (DEPTOS_CONFLICTO_ALTO.has(m.depto_code)) contexto += 50;
     if (DEPTOS_DISPERSION.has(m.depto_code)) contexto += 35;
-    // Municipios pequeños y aislados (<5k hab en deptos de conflicto) son más vulnerables
     if (m.poblacion < 5000 && DEPTOS_CONFLICTO_ALTO.has(m.depto_code)) contexto += 15;
+    if (m.poblacion_imputada) contexto += 10; // sin datos = riesgo de subregistro
     contexto = Math.min(100, contexto);
 
-    // ----- IRCA SCORE FINAL (0-100) -----
+    // ----- IRCA SCORE FINAL -----
     let irca_score = vulnerabilidad * 0.45 + exposicion * 0.30 + contexto * 0.25;
 
-    // Penalización extra si NO hay servicios Y hay población significativa
-    if (m.camas === 0 && m.poblacion > 1000) {
-      irca_score = Math.max(irca_score, 70); // mínimo Alto si no hay servicios
-    }
-    // Penalización extra si NO hay servicios Y está en zona de conflicto
-    if (m.camas === 0 && DEPTOS_CONFLICTO_ALTO.has(m.depto_code)) {
-      irca_score = Math.max(irca_score, 80); // mínimo Crítico
-    }
+    // Penalizaciones por ausencia de servicios
+    if (m.camas === 0 && m.poblacion > 1000) irca_score = Math.max(irca_score, 70);
+    if (m.camas === 0 && DEPTOS_CONFLICTO_ALTO.has(m.depto_code)) irca_score = Math.max(irca_score, 80);
+    if (m.camas === 0 && m.poblacion > 10000) irca_score = Math.max(irca_score, 85);
 
     irca_score = Number(Math.min(100, Math.max(0, irca_score)).toFixed(2));
 
-    // ----- CLASIFICACIÓN -----
     let nivel: "Bajo" | "Medio" | "Alto" | "Crítico";
     if (irca_score >= 65) nivel = "Crítico";
     else if (irca_score >= 45) nivel = "Alto";
@@ -203,6 +242,7 @@ export async function runPipelineNational() {
       nivel,
       componentes: {
         poblacion: m.poblacion,
+        poblacion_imputada: m.poblacion_imputada,
         camas: m.camas,
         eventos: m.eventos,
         camas_por_1000: Number(camas1k.toFixed(3)),
