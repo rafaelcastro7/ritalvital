@@ -105,17 +105,7 @@ export async function runPipelineNational() {
     ).catch(() => []),
   ]);
 
-  // Mapa: nombre_municipio_normalizado → afiliados totales (sub + con)
-  const afiliadosPorNombre = new Map<string, number>();
-  for (const r of [...bduaSub, ...bduaCon]) {
-    const dpto = norm(r.dpr_nombre || "");
-    const muni = norm(r.mnc_nombre || "");
-    if (!muni) continue;
-    const total = Number(r.total) || 0;
-    // Index por nombre+depto y solo nombre (fallback)
-    afiliadosPorNombre.set(`${dpto}|${muni}`, (afiliadosPorNombre.get(`${dpto}|${muni}`) || 0) + total);
-    afiliadosPorNombre.set(muni, (afiliadosPorNombre.get(muni) || 0) + total);
-  }
+
 
   // Asignar población a cada muni usando índices
   let imputados = 0;
