@@ -65,27 +65,30 @@ export async function runPipelineNational() {
   );
 
   const muniMap = new Map<string, MuniRow>();
-  // Index: nombre normalizado → códigos posibles (para matching de BDUA/REPS por nombre)
-  const nombreIndex = new Map<string, string[]>();
+  const idxDeptoMuni = new Map<string, string>();   // "DEPTO_NORM|MUNI_NORM" → cod_mpio
+  const idxMuni = new Map<string, string[]>();      // "MUNI_NORM" → [cod_mpio,...]
 
   for (const r of divipola) {
     const code = String(r.cod_mpio ?? "").padStart(5, "0");
     if (code.length !== 5 || code === "00000") continue;
     const dCode = code.slice(0, 2);
     const nombre = String(r.nom_mpio ?? "").trim();
+    const deptoNombre = DEPTO_NAMES[dCode] ?? r.dpto ?? "";
     muniMap.set(code, {
       muni_code: code,
       muni_nombre: nombre,
       depto_code: dCode,
-      depto_nombre: DEPTO_NAMES[dCode] ?? r.dpto ?? "",
+      depto_nombre: deptoNombre,
       poblacion: 0,
       poblacion_imputada: false,
       camas: 0,
       eventos: 0,
     });
-    const key = `${dCode}|${norm(nombre)}`;
-    if (!nombreIndex.has(key)) nombreIndex.set(key, []);
-    nombreIndex.get(key)!.push(code);
+    const nm = norm(nombre);
+    const dn = norm(deptoNombre);
+    idxDeptoMuni.set(`${dn}|${nm}`, code);
+    if (!idxMuni.has(nm)) idxMuni.set(nm, []);
+    idxMuni.get(nm)!.push(code);
   }
 
   // ============================================================
