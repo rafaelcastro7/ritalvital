@@ -88,10 +88,7 @@ Deno.serve(async (req) => {
   }).select().single();
 
   try {
-    const { data: fechas } = await sb
-      .from("irca_snapshots").select("fecha").order("fecha", { ascending: false }).limit(1);
-    const fecha = fechas?.[0]?.fecha;
-    if (!fecha) throw new Error("Sin snapshots disponibles");
+    const fecha = await ensureSnapshot();
 
     const { data: muns } = await sb
       .from("irca_snapshots").select("*")
