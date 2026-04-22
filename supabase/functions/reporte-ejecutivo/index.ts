@@ -1,11 +1,34 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
+import { runPipelineNational } from "../_shared/pipeline.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+
+async function ensureSnapshot(): Promise<string> {
+  const { data: fechas } = await sb
+    .from("irca_snapshots").select("fecha").order("fecha", { ascending: false }).limit(1);
+  if (fechas?.[0]?.fecha) return fechas[0].fecha as string;
+
+  // Auto-generar snapshot si no existe
+  console.log("No hay snapshots. Generando uno nuevo...");
+  const fecha = new Date().toISOString().slice(0, 10);
+  const rows = await runPipelineNational();
+  if (!rows.length) throw new Error("Pipeline retornó 0 filas");
+
+  await sb.from("irca_snapshots").delete().eq("fecha", fecha);
+  const BATCH = 500;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const slice = rows.slice(i, i + BATCH).map((r) => ({ ...r, fecha, pipeline_version: "v1" }));
+    const { error } = await sb.from("irca_snapshots").insert(slice);
+    if (error) throw error;
+  }
+  console.log(`Snapshot creado con ${rows.length} filas`);
+  return fecha;
+}
 
 function htmlReport(opts: {
   titulo: string;
