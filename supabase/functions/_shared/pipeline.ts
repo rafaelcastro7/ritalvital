@@ -117,55 +117,66 @@ export async function runPipelineNational() {
     afiliadosPorNombre.set(muni, (afiliadosPorNombre.get(muni) || 0) + total);
   }
 
-  // Asignar población a cada muni
+  // Asignar población a cada muni usando índices
   let imputados = 0;
+  let pobMatched = 0;
+  // Pre-procesar BDUA agregado: (depto+muni) → total y (muni) → total
+  const pobDeptoMuni = new Map<string, number>();
+  const pobMuniSolo = new Map<string, number>();
+  for (const r of [...bduaSub, ...bduaCon]) {
+    const dpto = norm(r.dpr_nombre || "");
+    const muni = norm(r.mnc_nombre || "");
+    if (!muni) continue;
+    const total = Number(r.total) || 0;
+    pobDeptoMuni.set(`${dpto}|${muni}`, (pobDeptoMuni.get(`${dpto}|${muni}`) || 0) + total);
+    pobMuniSolo.set(muni, (pobMuniSolo.get(muni) || 0) + total);
+  }
   for (const m of muniMap.values()) {
-    const dptoNorm = norm(m.depto_nombre);
-    const muniNorm = norm(m.muni_nombre);
-    const k1 = `${dptoNorm}|${muniNorm}`;
-    let pob = afiliadosPorNombre.get(k1);
-    if (!pob || pob < 100) pob = afiliadosPorNombre.get(muniNorm);
+    const k1 = `${norm(m.depto_nombre)}|${norm(m.muni_nombre)}`;
+    let pob = pobDeptoMuni.get(k1);
+    if (!pob || pob < 100) {
+      const candidates = idxMuni.get(norm(m.muni_nombre)) || [];
+      // Si solo hay un municipio con ese nombre a nivel nacional, usar fallback
+      if (candidates.length === 1) pob = pobMuniSolo.get(norm(m.muni_nombre));
+    }
     if (pob && pob > 100) {
-      // BDUA cubre ~95% en subsidiado y ~85% en contributivo combinados → ajuste mínimo 1.05
       m.poblacion = Math.round(pob * 1.05);
+      pobMatched++;
     } else {
-      // Imputación conservadora: municipio rural promedio Colombia
       m.poblacion = 8000;
       m.poblacion_imputada = true;
       imputados++;
     }
   }
-  console.log(`Población: ${muniMap.size - imputados} con datos reales, ${imputados} imputados`);
+  console.log(`Población: ${pobMatched} reales, ${imputados} imputados`);
 
   // ============================================================
-  // 3. CAMAS — REPS (matched por nombre departamento+municipio)
+  // 3. CAMAS — REPS (matched por índice depto+muni)
   // ============================================================
   const reps = await socrataQuery(
     "s2ru-bqt6",
     "SELECT departamento, municipio, sum(num_cantidad_capacidad_instalada::number) as total WHERE nom_grupo_capacidad='CAMAS' GROUP BY departamento, municipio LIMIT 2000"
   ).catch(() => []);
 
+  let camasMatched = 0;
   for (const r of reps) {
     const dpto = norm(r.departamento || "");
     const muni = norm(r.municipio || "");
     if (!muni) continue;
     const total = Number(r.total) || 0;
-    // Buscar muni por nombre+depto
-    let asignado = false;
-    for (const m of muniMap.values()) {
-      if (norm(m.muni_nombre) === muni && norm(m.depto_nombre) === dpto) {
-        m.camas += total;
-        asignado = true;
-        break;
-      }
+    let code = idxDeptoMuni.get(`${dpto}|${muni}`);
+    if (!code) {
+      const candidates = idxMuni.get(muni) || [];
+      if (candidates.length === 1) code = candidates[0];
     }
-    if (!asignado) {
-      // Fallback: solo nombre (puede haber colisiones, sumar al primero)
-      for (const m of muniMap.values()) {
-        if (norm(m.muni_nombre) === muni) { m.camas += total; break; }
-      }
+    if (code) {
+      const m = muniMap.get(code)!;
+      m.camas += total;
+      camasMatched++;
     }
   }
+  console.log(`Camas: ${camasMatched}/${reps.length} REPS rows matched`);
+
 
   // ============================================================
   // 4. EVENTOS — UNGRD último año por DIVIPOLA
