@@ -1,0 +1,1 @@
+ALTER TABLE public.irca_snapshots ALTER COLUMN irca_score TYPE numeric(6,2);
