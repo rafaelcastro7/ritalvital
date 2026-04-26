@@ -1,6 +1,5 @@
-import { Database, Wifi, WifiOff, Map, BarChart3, User, LogIn, MessageSquare, FileText, Shield } from 'lucide-react';
+import { Database, Wifi, WifiOff, Map, BarChart3, MessageSquare, FileText, Shield, BookOpen } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
 
 interface Props {
   totalMunicipios: number;
@@ -16,7 +15,6 @@ const DashboardHeader = ({
   pipelineDate, isLiveData, totalMunicipios, view, onChangeView,
   onAboutOpen, onDatasetManagerOpen,
 }: Props) => {
-  const { user } = useAuth();
   return (
   <header className="border-b border-border px-6 py-3 flex items-center justify-between flex-wrap gap-3">
     <div className="flex items-center gap-6">
@@ -105,20 +103,18 @@ const DashboardHeader = ({
         <FileText className="w-3 h-3" /> Reportes
       </Link>
       <Link
+        to="/normativa"
+        className="flex items-center gap-1.5 text-[11px] bg-secondary hover:bg-accent text-secondary-foreground px-2.5 py-1 rounded-full transition"
+        aria-label="Normativa"
+      >
+        <BookOpen className="w-3 h-3" /> Normativa
+      </Link>
+      <Link
         to="/admin"
         className="flex items-center gap-1.5 text-[11px] bg-secondary hover:bg-accent text-secondary-foreground px-2.5 py-1 rounded-full transition"
         aria-label="Panel admin"
       >
         <Shield className="w-3 h-3" /> Admin
-      </Link>
-      <Link
-        to={user ? '/cuenta' : '/auth'}
-        className="flex items-center gap-1.5 text-[11px] bg-secondary hover:bg-accent text-secondary-foreground px-2.5 py-1 rounded-full transition"
-        aria-label={user ? 'Mi cuenta' : 'Ingresar'}
-      >
-        {user
-          ? <><User className="w-3 h-3" /> Cuenta</>
-          : <><LogIn className="w-3 h-3" /> Ingresar</>}
       </Link>
     </div>
   </header>
