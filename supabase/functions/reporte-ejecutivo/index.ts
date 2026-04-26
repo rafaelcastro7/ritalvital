@@ -36,6 +36,7 @@ function htmlReport(opts: {
   resumen: string;
   tabla: any[];
   recomendaciones: string;
+  normativa?: { norma: string; articulo: string | null; titulo: string; contenido: string; url_fuente: string | null }[];
 }) {
   const rows = opts.tabla.map((r) => `
     <tr>
@@ -68,6 +69,16 @@ function htmlReport(opts: {
       <table><thead><tr><th>Municipio</th><th>IRCA</th><th>Nivel</th><th>Población</th><th>Eventos</th></tr></thead>
       <tbody>${rows}</tbody></table></div>
     <div class="card"><h3>Recomendaciones operativas</h3><div>${opts.recomendaciones.replace(/\n/g, "<br/>")}</div></div>
+    ${opts.normativa && opts.normativa.length ? `
+    <div class="card"><h3>Marco normativo aplicable</h3>
+      ${opts.normativa.map((n) => `
+        <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;">
+          <div style="font-size:10px;text-transform:uppercase;color:#3b82f6;font-weight:600;letter-spacing:.5px">${n.norma}</div>
+          <div style="font-size:13px;font-weight:600;margin:2px 0">${n.articulo ?? n.titulo}</div>
+          <div style="font-size:11px;color:#475569;line-height:1.5">${n.contenido.slice(0, 350)}${n.contenido.length > 350 ? "…" : ""}</div>
+          ${n.url_fuente ? `<a href="${n.url_fuente}" style="font-size:10px;color:#3b82f6">Ver fuente oficial →</a>` : ""}
+        </div>`).join("")}
+    </div>` : ""}
     <div class="footer">Documento generado por copiloto agéntico. Validar siempre con equipo territorial.</div>
   </body></html>`;
 }
@@ -126,12 +137,20 @@ Devuelve JSON: { "resumen": "...", "recomendaciones": "- ...\\n- ..." }`;
     const aiJson = await ai.json();
     const parsed = JSON.parse(aiJson.choices[0].message.content);
 
+    // RAG: buscar normativa aplicable según el contexto del reporte
+    const queryNorm = `vigilancia calidad agua IRCA municipio ${stats.criticos > 0 ? "crítico" : "riesgo"} prestación servicios salud`;
+    const { data: normativa } = await sb.rpc("buscar_normativa_fts", {
+      query_text: queryNorm,
+      match_count: 3,
+    });
+
     const html = htmlReport({
       titulo: `Reporte ejecutivo IRCA — ${depto_nombre ?? depto_code}`,
       fecha,
       resumen: parsed.resumen,
       tabla: top,
       recomendaciones: parsed.recomendaciones,
+      normativa: normativa ?? [],
     });
 
     // Subir HTML al bucket público

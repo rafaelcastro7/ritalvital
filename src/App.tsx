@@ -10,6 +10,7 @@ import Cuenta from "./pages/Cuenta.tsx";
 import Chat from "./pages/Chat.tsx";
 import Admin from "./pages/Admin.tsx";
 import Reportes from "./pages/Reportes.tsx";
+import Normativa from "./pages/Normativa.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/chat" element={<Chat />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/reportes" element={<Reportes />} />
+            <Route path="/normativa" element={<Normativa />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
