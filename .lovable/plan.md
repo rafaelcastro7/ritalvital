@@ -1,39 +1,69 @@
 
-El usuario confirmó "Sí" — quiere que ejecute yo mismo el prompt de investigación y entregue el prompt maestro en esta conversación.
 
-Plan: investigar bases del concurso + sistemas agénticos + fuentes de datos colombianas, y producir un prompt maestro autocontenido listo para pegar en una nueva sesión de Lovable.
+## Continuación: Plan de mejoras y verificación end-to-end
 
-## Plan de ejecución
+El sistema base ya está completo (Cloud, Auth opcional, Pipeline IRCA v3 con umbrales absolutos, RAG con FTS, agentes Vigía/Analista/Reportero/Validador, frontend público). Propongo continuar con dos frentes complementarios: **(A) verificación operativa** del flujo completo y **(B) endurecimiento + features pendientes** de mayor impacto.
 
-**Fase 1 — Investigación (usaré websearch)**
-1. Bases del concurso "Datos al Ecosistema 2026" del MinTIC: criterios de evaluación, entregables, fechas, premios.
-2. Sistemas agénticos en salud pública / gobierno: patrones (ReAct, multi-agente, RAG), frameworks compatibles con React + edge functions.
-3. Fuentes de datos colombianas adicionales: SISPRO, SIVIGILA, IDEAM, IGAC, DANE microdatos, SIMAT, Migración Colombia. Endpoints reales en datos.gov.co.
-4. Dashboards de referencia: HealthMap, OCHA HDX, INFORM Risk Index, PAHO PLISA.
-5. Necesidades de entidades colombianas: Supersalud, INS, UNGRD, gobernaciones de departamentos vulnerables.
+### Fase A — Verificación end-to-end (sanity check)
 
-**Fase 2 — Diseño del prompt maestro**
+1. Confirmar que `irca_snapshots` tiene datos del día actual y que la distribución refleja la nueva fórmula v3 (esperado: ~283 Críticos, ~100 Altos).
+2. Confirmar que `normativa_chunks` está poblada con los 4 cuerpos normativos preset.
+3. Probar `chat-analista` con una consulta que dispare a la vez `top_criticos` + `buscar_normativa` y verificar que cita artículo + URL.
+4. Generar un reporte ejecutivo de Chocó y validar que el HTML público se renderiza desde Storage.
+5. Revisar logs de las edge functions para detectar warnings silenciosos.
 
-El prompt maestro incluirá:
+### Fase B — Mejoras priorizadas
 
-- **Visión**: RutaVital IA como copiloto agéntico de salud pública territorial.
-- **4 agentes concretos** con triggers, herramientas y modelos:
-  - Agente Vigía (cron → monitorea fuentes → dispara alertas IRCA)
-  - Agente Analista (chat conversacional sobre municipios con tool-calling)
-  - Agente Reportero (genera PDF ejecutivo por gobernación bajo demanda)
-  - Agente Validador (cross-check entre fuentes, detecta anomalías y subregistro)
-- **Nuevas fuentes** priorizadas valor/esfuerzo (tabla)
-- **Features nuevas**: chat con dashboard, alertas proactivas, reportes PDF, API pública, vistas por rol, histórico temporal
-- **Arquitectura técnica**: Lovable Cloud (auth, DB, edge functions, storage, cron) + Lovable AI Gateway (gemini-2.5-flash default, gpt-5 para razonamiento profundo) + esquema de tablas con RLS
-- **Mapeo a criterios del concurso**
-- **Plan por fases** MVP→V1→V2
-- **Guardarrailes éticos**: transparencia, explicabilidad, no reemplazo de criterio humano
+**B1. Página pública `/normativa`** (alto impacto, bajo costo)
+- Lista paginada de `normativa_chunks` con buscador en español usando RPC `buscar_normativa_fts`.
+- Filtro por norma (Resolución 2115/2007, 3100/2019, Ley 1751/2015, Decreto 1575/2007).
+- Card por artículo con título, contenido truncado y enlace a fuente oficial.
+- Link en `DashboardHeader`.
 
-**Formato de entrega final**:
-1. Resumen de investigación (~400 palabras con links)
-2. Decisiones de diseño (qué incluí / qué descarté y por qué)
-3. PROMPT MAESTRO en bloque ```code``` autocontenido y listo para pegar
+**B2. Rate limit por IP en edge functions públicas** (protege créditos IA)
+- Nueva tabla `rate_limits (ip text, function_name text, window_start timestamptz, count int)`.
+- Helper `_shared/rate-limit.ts` que lee `x-forwarded-for`, ventana deslizante de 1 hora.
+- Aplicar a `chat-analista` (20 req/h) y `reporte-ejecutivo` (5 req/h).
+- Respuesta 429 con `Retry-After` cuando se excede.
 
-**Modo actual**: estoy en plan mode (read-only). Para ejecutar websearch y producir el prompt maestro necesito modo default. Una vez aprobes este plan, cambio a default mode y entrego las 3 partes en una sola respuesta. No tocaré ningún archivo del proyecto — el entregable es texto en el chat.
+**B3. Marco normativo en reportes ejecutivos** (cierra el círculo RAG)
+- En `reporte-ejecutivo`, antes de llamar a Gemini, ejecutar `buscar_normativa_fts` con el resumen del depto.
+- Inyectar los 3 artículos más relevantes en el prompt y agregar sección "Marco normativo aplicable" al HTML final.
 
-**Tiempo estimado**: 1 sola respuesta tras aprobación, con 4-6 búsquedas web.
+**B4. Limpieza de auth residual** (coherencia con "todo público")
+- Ocultar enlaces a `/auth` y `/cuenta` del `DashboardHeader`.
+- Mantener archivos por si se reactiva en el futuro, pero sin entradas visibles.
+
+### Detalles técnicos
+
+```text
+B1 /normativa
+  src/pages/Normativa.tsx           ← nueva página
+  src/App.tsx                       ← agregar ruta
+  src/components/dashboard/         ← link en header
+
+B2 rate-limit
+  supabase/migrations/*.sql         ← tabla rate_limits + índice (ip, function_name, window_start)
+  supabase/functions/_shared/rate-limit.ts
+  supabase/functions/chat-analista/index.ts       ← integrar
+  supabase/functions/reporte-ejecutivo/index.ts   ← integrar
+
+B3 marco normativo en reportes
+  supabase/functions/reporte-ejecutivo/index.ts
+    - llamar supabase.rpc("buscar_normativa_fts", { query_text, match_count: 3 })
+    - extender htmlReport() con sección normativa
+```
+
+### Criterios de éxito
+
+- `/normativa` muestra ≥ 4 normas con búsqueda funcional en español.
+- 21ª llamada/hora a `chat-analista` desde la misma IP devuelve 429.
+- Reporte de Chocó incluye sección "Marco normativo aplicable" con al menos 2 artículos citados.
+- Header público no muestra enlaces a auth/cuenta.
+
+### Fuera de alcance (para iteraciones siguientes)
+
+- Streaming SSE en chat (requiere refactor del cliente).
+- Conexión a SIVIGILA / IDEAM (depende de credenciales/APIs externas).
+- Embeddings vectoriales reales (requiere `GEMINI_API_KEY` externa; FTS actual es suficiente).
+
