@@ -24,6 +24,11 @@ const DEPTOS_CONFLICTO_ALTO = new Set(["27", "94", "97", "99", "91", "95", "44",
 // Dispersión rural extrema y barreras geográficas
 const DEPTOS_DISPERSION = new Set(["27", "91", "94", "95", "97", "99", "88", "86"]);
 
+/**
+ * Normaliza nombres de municipio/departamento para emparejar fuentes con
+ * notaciones inconsistentes (DANE escribe "BOGOTÁ D.C.", REPS "Bogota DC", etc.).
+ * Pasos: mayúsculas → quitar tildes → quitar "D.C." → quitar artículos → solo A-Z 0-9.
+ */
 function norm(s: string): string {
   return (s || "")
     .toUpperCase()
@@ -34,6 +39,9 @@ function norm(s: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// Wrapper sobre Socrata: arma SoQL con $query, valida estructura y propaga
+// errores con el dataset y status para diagnóstico rápido.
 
 async function socrataQuery(dataset: string, soql: string): Promise<any[]> {
   const url = `${SOCRATA}/${dataset}.json?$query=${encodeURIComponent(soql)}`;
@@ -68,6 +76,9 @@ export async function runPipelineNational() {
   const idxDeptoMuni = new Map<string, string>();   // "DEPTO_NORM|MUNI_NORM" → cod_mpio
   const idxMuni = new Map<string, string[]>();      // "MUNI_NORM" → [cod_mpio,...]
 
+  // Construimos dos índices en memoria para que las fuentes posteriores
+  // (REPS, BDUA, UNGRD) puedan emparejarse por (depto+muni) o solo (muni)
+  // sin perder municipios homónimos en distintos departamentos.
   for (const r of divipola) {
     const code = String(r.cod_mpio ?? "").padStart(5, "0");
     if (code.length !== 5 || code === "00000") continue;
@@ -107,7 +118,11 @@ export async function runPipelineNational() {
 
 
 
-  // Asignar población a cada muni usando índices
+  // Asignar población a cada muni usando índices.
+  // Estrategia: BDUA cubre ~95% de los colombianos. Multiplicamos por 1.05
+  // para estimar población total. Si no hay match (depto+muni) probamos solo
+  // por nombre cuando es único nacional. Si todo falla → 8.000 hab imputados
+  // (penalización adicional aplicada en el componente C).
   let imputados = 0;
   let pobMatched = 0;
   // Pre-procesar BDUA agregado: (depto+muni) → total y (muni) → total
@@ -188,6 +203,10 @@ export async function runPipelineNational() {
   // ============================================================
   // 5. FÓRMULA IRCA v3 — UMBRALES ABSOLUTOS (OMS / MinSalud / UARIV)
   // ============================================================
+  // Diferencia clave vs IRCA v1: en v1 los componentes eran percentiles
+  // relativos (QuantileTransformer). Esto enmascaraba la realidad: en un país
+  // con brechas reales, "el peor del ranking" siempre es 100 aunque sea
+  // razonable. v3 usa umbrales absolutos basados en estándares OMS/MinSalud.
   const all = Array.from(muniMap.values()).filter((m) => m.poblacion > 0);
 
   return all.map((m) => {
@@ -196,6 +215,8 @@ export async function runPipelineNational() {
 
     // ----- A. VULNERABILIDAD SANITARIA (0-100) — peso 45% -----
     // OMS: 3.5 camas/1000 = óptimo. Colombia promedio: 1.7. Crítico: <0.5
+    // Función a tramos lineal: a menor disponibilidad, mayor puntaje.
+    // 0 camas reportadas → 100 directamente (servicio inexistente).
     let vulnerabilidad: number;
     if (m.camas === 0) vulnerabilidad = 100;
     else if (camas1k >= 3.5) vulnerabilidad = 0;
@@ -206,6 +227,8 @@ export async function runPipelineNational() {
     vulnerabilidad = Math.min(100, Math.max(0, vulnerabilidad));
 
     // ----- B. EXPOSICIÓN A DESASTRES (0-100) — peso 30% -----
+    // Eventos UNGRD del último año normalizados por cada 10.000 hab.
+    // Umbrales calibrados con la distribución nacional 2023-2024.
     let exposicion: number;
     if (eventos10k >= 10) exposicion = 100;
     else if (eventos10k >= 5) exposicion = 70 + (eventos10k - 5) * 6;
@@ -216,6 +239,9 @@ export async function runPipelineNational() {
     exposicion = Math.min(100, exposicion);
 
     // ----- C. CONTEXTO TERRITORIAL (0-100) — peso 25% -----
+    // Penalizaciones acumuladas: conflicto armado (UARIV), dispersión rural
+    // (DNP), pequeñas poblaciones rurales en conflicto, y desconocimiento
+    // de población (proxy de subregistro). Capado a 100.
     let contexto = 0;
     if (DEPTOS_CONFLICTO_ALTO.has(m.depto_code)) contexto += 50;
     if (DEPTOS_DISPERSION.has(m.depto_code)) contexto += 35;
@@ -224,15 +250,20 @@ export async function runPipelineNational() {
     contexto = Math.min(100, contexto);
 
     // ----- IRCA SCORE FINAL -----
+    // Combinación lineal ponderada de los 3 componentes.
     let irca_score = vulnerabilidad * 0.45 + exposicion * 0.30 + contexto * 0.25;
 
-    // Penalizaciones por ausencia de servicios
+    // Penalizaciones duras: si un municipio tiene población significativa y
+    // CERO camas reportadas, no puede caer por debajo de cierto piso aunque
+    // su contexto territorial sea favorable. Aumenta progresivamente con el
+    // tamaño de la población desatendida y con la presencia de conflicto.
     if (m.camas === 0 && m.poblacion > 1000) irca_score = Math.max(irca_score, 70);
     if (m.camas === 0 && DEPTOS_CONFLICTO_ALTO.has(m.depto_code)) irca_score = Math.max(irca_score, 80);
     if (m.camas === 0 && m.poblacion > 10000) irca_score = Math.max(irca_score, 85);
 
     irca_score = Number(Math.min(100, Math.max(0, irca_score)).toFixed(2));
 
+    // Clasificación final con umbrales fijos (no relativos al ranking).
     let nivel: "Bajo" | "Medio" | "Alto" | "Crítico";
     if (irca_score >= 65) nivel = "Crítico";
     else if (irca_score >= 45) nivel = "Alto";
