@@ -1,69 +1,77 @@
+## Mejora de documentación para hackathon GobIA
 
+**Cero cambios de funcionalidad.** Solo se reemplazan/crean archivos de documentación y se añaden comentarios en español a 3 edge functions (lógica intacta).
 
-## Continuación: Plan de mejoras y verificación end-to-end
+---
 
-El sistema base ya está completo (Cloud, Auth opcional, Pipeline IRCA v3 con umbrales absolutos, RAG con FTS, agentes Vigía/Analista/Reportero/Validador, frontend público). Propongo continuar con dos frentes complementarios: **(A) verificación operativa** del flujo completo y **(B) endurecimiento + features pendientes** de mayor impacto.
+### 1. `README.md` — reemplazo completo
 
-### Fase A — Verificación end-to-end (sanity check)
+Nueva versión profesional en español con:
 
-1. Confirmar que `irca_snapshots` tiene datos del día actual y que la distribución refleja la nueva fórmula v3 (esperado: ~283 Críticos, ~100 Altos).
-2. Confirmar que `normativa_chunks` está poblada con los 4 cuerpos normativos preset.
-3. Probar `chat-analista` con una consulta que dispare a la vez `top_criticos` + `buscar_normativa` y verificar que cita artículo + URL.
-4. Generar un reporte ejecutivo de Chocó y validar que el HTML público se renderiza desde Storage.
-5. Revisar logs de las edge functions para detectar warnings silenciosos.
+- **Badges de tecnología**: React 18, TypeScript 5, Vite 5, Tailwind 3, Supabase, Gemini 2.5 Flash/Pro, Leaflet, Socrata datos.gov.co, licencia CC BY 4.0.
+- **El problema**: gestores de salud sin herramienta unificada que cruce DANE, REPS, UNGRD, BDUA + desconexión con normativa + vigilancia reactiva.
+- **La solución**: descarga + cruce + IRCA v3 + 4 agentes IA + búsqueda normativa + reportes ejecutivos, todo público y open source.
+- **Sección "🤖 Agentes de IA"**: tabla con los 4 agentes (Vigía, Validador, Analista, Reportero), modelo, inputs y outputs.
+- **Sección "📊 Fuentes de datos abiertos"**: tabla con DIVIPOLA `gdxc-w37w`, REPS `s2ru-bqt6`, UNGRD `rgre-6ak4` + `wwkg-r6te`, BDUA `d7a5-cnra` + `tq4m-hmg2` con URLs canónicas a datos.gov.co.
+- **Diagrama ASCII de arquitectura** mostrando flujo Socrata → Edge Functions → tablas → Frontend.
+- **Stack tecnológico** organizado por capa: Frontend, Backend, IA, Base de datos, Datos abiertos.
+- **Instalación local**: prerrequisitos, `git clone`, `bun install`, variables de entorno, primer disparo del pipeline desde `/admin`.
+- **Vistas principales**: `/`, `/chat`, `/reportes`, `/normativa`, `/admin` con descripción.
+- **Sección "🎯 Impacto"**: cobertura 1.122 municipios, distribución observada, 4 casos de uso (alcaldías, secretarías, MinSalud/UNGRD, veedurías), trazabilidad agéntica.
+- Enlaces a `ARCHITECTURE.md`, `AGENTS.md`, `CHANGELOG.md`.
 
-### Fase B — Mejoras priorizadas
+### 2. `CHANGELOG.md` — reemplazo completo
 
-**B1. Página pública `/normativa`** (alto impacto, bajo costo)
-- Lista paginada de `normativa_chunks` con buscador en español usando RPC `buscar_normativa_fts`.
-- Filtro por norma (Resolución 2115/2007, 3100/2019, Ley 1751/2015, Decreto 1575/2007).
-- Card por artículo con título, contenido truncado y enlace a fuente oficial.
-- Link en `DashboardHeader`.
+Formato Keep a Changelog con 4 versiones progresivas:
 
-**B2. Rate limit por IP en edge functions públicas** (protege créditos IA)
-- Nueva tabla `rate_limits (ip text, function_name text, window_start timestamptz, count int)`.
-- Helper `_shared/rate-limit.ts` que lee `x-forwarded-for`, ventana deslizante de 1 hora.
-- Aplicar a `chat-analista` (20 req/h) y `reporte-ejecutivo` (5 req/h).
-- Respuesta 429 con `Retry-After` cuando se excede.
+- **0.4.0 — Esta semana (2026-04-22)**: Pulido final, escalado nacional, documentación, RAG en reportes, normativa cargada, página `/normativa`, umbrales absolutos OMS, acceso público, fix `irca_score numeric(6,2)`.
+- **0.3.0 — Semana 3 (2026-04-15)**: Agente Analista con 6 tools y loop ReAct, Agente Reportero con HTML público, system prompt riguroso, bucket `reportes`, extensión de `agent_runs`.
+- **0.2.0 — Semana 2 (2026-04-08)**: Agente Vigía (deltas IRCA + severidad), Agente Validador (3 reglas anti-anomalía), tabla `normativa_chunks` con tsvector + pgvector, ingestar-normativa con 10 artículos preset, anti-duplicados.
+- **0.1.0 — Semana 1 (2026-04-01)**: MVP — pipeline cliente IRCA v1 (3 percentiles), dashboard básico (Leaflet/KPI/tabla), DatasetManager, PanicButton, fallback localStorage.
 
-**B3. Marco normativo en reportes ejecutivos** (cierra el círculo RAG)
-- En `reporte-ejecutivo`, antes de llamar a Gemini, ejecutar `buscar_normativa_fts` con el resumen del depto.
-- Inyectar los 3 artículos más relevantes en el prompt y agregar sección "Marco normativo aplicable" al HTML final.
+Cada entrada con secciones `Added`, `Changed`, `Fixed`.
 
-**B4. Limpieza de auth residual** (coherencia con "todo público")
-- Ocultar enlaces a `/auth` y `/cuenta` del `DashboardHeader`.
-- Mantener archivos por si se reactiva en el futuro, pero sin entradas visibles.
+### 3. `ARCHITECTURE.md` — nuevo
 
-### Detalles técnicos
+Documento técnico con 5 secciones:
 
-```text
-B1 /normativa
-  src/pages/Normativa.tsx           ← nueva página
-  src/App.tsx                       ← agregar ruta
-  src/components/dashboard/         ← link en header
+1. **¿Por qué este stack?** — tabla justificando React/TS/Vite, Tailwind/shadcn, Leaflet, TanStack Query, Supabase, Deno, Gemini, FTS.
+2. **Pipeline IRCA v3 paso a paso** — 5 pasos (DIVIPOLA → BDUA → REPS → UNGRD → Cálculo) con las **3 tablas de tramos** completas (vulnerabilidad 45%, exposición 30%, contexto 25%), las penalizaciones duras y los rangos de clasificación.
+3. **RAG con normativa colombiana** — indexación tsvector español, query SQL `buscar_normativa_fts`, inyección en Analista (function calling) y Reportero (proactivo), justificación de FTS sobre embeddings.
+4. **Comunicación entre Edge Functions** — diagrama ASCII mostrando que la comunicación es vía estado en PostgreSQL, no llamadas directas; ventajas del patrón.
+5. **Resumen de decisiones de diseño**: por qué RLS público, por qué sin auth obligatoria, por qué Gemini sobre OpenAI (contexto 1M, costo, gateway sin API keys), por qué umbrales absolutos, por qué pipeline server-side, por qué HTML sobre PDF, por qué auditoría agéntica obligatoria.
 
-B2 rate-limit
-  supabase/migrations/*.sql         ← tabla rate_limits + índice (ip, function_name, window_start)
-  supabase/functions/_shared/rate-limit.ts
-  supabase/functions/chat-analista/index.ts       ← integrar
-  supabase/functions/reporte-ejecutivo/index.ts   ← integrar
+### 4. `AGENTS.md` — nuevo
 
-B3 marco normativo en reportes
-  supabase/functions/reporte-ejecutivo/index.ts
-    - llamar supabase.rpc("buscar_normativa_fts", { query_text, match_count: 3 })
-    - extender htmlReport() con sección normativa
-```
+Especificación detallada de los 4 agentes:
 
-### Criterios de éxito
+- Para cada uno: tabla con propósito, modelo, edge function, trigger, inputs, outputs.
+- **Vigía**: lógica `severidadFromDelta`, ejemplo de registro `agent_runs`, caso de uso (La Niña → alerta Quibdó).
+- **Validador**: tabla con las 3 reglas (subregistro_reps, sin_eventos_ungrd, outlier_camas) + caso real Riosucio.
+- **Analista**: **system prompt exacto** transcrito, tabla con las 6 tools, loop ReAct de 5 iteraciones, registro en `agent_runs`, 2 ejemplos de preguntas con flujo esperado paso a paso.
+- **Reportero**: pipeline interno de 6 pasos, prompt JSON-output transcrito, caso real Chocó.
+- Sección final **"Trazabilidad agéntica"** con query SQL para auditar `agent_runs`.
 
-- `/normativa` muestra ≥ 4 normas con búsqueda funcional en español.
-- 21ª llamada/hora a `chat-analista` desde la misma IP devuelve 429.
-- Reporte de Chocó incluye sección "Marco normativo aplicable" con al menos 2 artículos citados.
-- Header público no muestra enlaces a auth/cuenta.
+### 5. Comentarios en código (sin tocar lógica)
 
-### Fuera de alcance (para iteraciones siguientes)
+**`supabase/functions/_shared/pipeline.ts`** — añadir comentarios de bloque explicando cada paso del IRCA: normalización de nombres, índices de matching, fallback de población BDUA, mapeo REPS, parsing de DIVIPOLA en UNGRD, fórmulas A/B/C con referencias OMS/UARIV, penalizaciones duras y umbrales de clasificación. (El archivo ya tiene comentarios; se enriquecen sin alterar código.)
 
-- Streaming SSE en chat (requiere refactor del cliente).
-- Conexión a SIVIGILA / IDEAM (depende de credenciales/APIs externas).
-- Embeddings vectoriales reales (requiere `GEMINI_API_KEY` externa; FTS actual es suficiente).
+**`supabase/functions/chat-analista/index.ts`** — comentarios explicando: rol del system prompt, las 6 tools y por qué cada una, el wrapper `findMuni` con búsqueda por código vs nombre, el loop ReAct (creación de conversación → carga de historial → llamada Gemini → ejecución de tools → re-loop), el manejo de errores 429/402 y el registro completo en `agent_runs`.
 
+**`supabase/functions/vigia-monitor/index.ts`** — comentarios explicando: por qué se necesitan 2 snapshots, la función `severidadFromDelta` con sus umbrales, la regla mínima `delta < 3 → ignorar`, el matching de suscripciones (severidad mínima + filtros de depto/muni + umbral IRCA) y el envío opcional con Resend.
+
+**Garantía**: solo se añaden líneas `//` y bloques `/* ... */`. No se modifica ningún identificador, expresión, condición ni return.
+
+---
+
+### Archivos no tocados
+
+- Toda la lógica TypeScript/React.
+- Todas las migraciones SQL.
+- `supabase/functions/_shared/cors.ts`, `validador-cross/index.ts`, `reporte-ejecutivo/index.ts`, `ingestar-normativa/index.ts`, `snapshot-irca/index.ts` (ya están suficientemente claros y no son requeridos por el prompt).
+- `package.json`, `vite.config.ts`, `tailwind.config.ts`, `index.html`, `.env`.
+- `public/data/files/README.md` (es el README histórico de la versión Python; se preserva como referencia documental).
+
+### Resultado esperado
+
+Un repositorio que un jurado técnico pueda recorrer en 10 minutos y entender: qué resuelve, cómo está construido, qué decisiones tomamos, cómo razonan los agentes y cómo verificar todo en producción — sin abrir un solo archivo de código.

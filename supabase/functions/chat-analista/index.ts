@@ -5,8 +5,13 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
+// Modelo: Gemini 2.5 Flash vía Lovable AI Gateway.
+// Elegido por su contexto de 1M tokens y costo predecible — permite inyectar
+// el listado completo de municipios sin truncar.
 const MODEL = "google/gemini-2.5-flash";
 
+// System prompt riguroso: prohíbe inventar cifras, obliga a usar herramientas
+// y a citar siempre fuente normativa. Es el contrato ético del agente.
 const SYSTEM_PROMPT = `Eres "Analista RutaVital", copiloto agéntico de salud pública territorial para Colombia.
 Tu fuente única de verdad son las herramientas. NUNCA inventes cifras: si no tienes el dato, llama a la herramienta.
 Hablas en español, conciso, con bullets y tablas cortas. Cita siempre el municipio + código DIVIPOLA y la fecha del snapshot.
@@ -14,6 +19,8 @@ Cuando expongas riesgo, distingue entre: vulnerabilidad sanitaria (camas/1000 ha
 Cuando hagas recomendaciones normativas o regulatorias, llama PRIMERO a buscar_normativa y CITA el artículo exacto (norma + artículo + URL fuente). No inventes referencias normativas.
 No reemplazas criterio humano: termina recomendaciones con "validar con el equipo territorial".`;
 
+// Las 6 herramientas que Gemini puede invocar autónomamente (function calling).
+// Cada una mapea a una consulta tipada sobre Postgres en `execTool` más abajo.
 const TOOLS = [
   {
     type: "function",
@@ -108,6 +115,8 @@ const TOOLS = [
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
+// Helper: localiza un municipio por código DIVIPOLA (5 dígitos) o por nombre
+// (búsqueda fuzzy con ILIKE). Devuelve el snapshot más reciente.
 async function findMuni(query: string) {
   const q = query.trim();
   // por código
@@ -129,6 +138,9 @@ async function findMuni(query: string) {
   return data?.[0];
 }
 
+// Dispatcher de herramientas: traduce la llamada del LLM a una consulta SQL
+// y devuelve un objeto JSON serializable que Gemini puede leer en la siguiente
+// iteración del loop ReAct.
 async function execTool(name: string, args: any) {
   if (name === "consultar_municipio") {
     const m = await findMuni(args.query);
@@ -195,7 +207,9 @@ async function execTool(name: string, args: any) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  // Acceso público sin autenticación
+  // Acceso público sin autenticación: cualquier ciudadano puede chatear.
+  // Los mensajes quedan persistidos para auditoría y para que el modelo tenga
+  // contexto en turnos posteriores.
   const body = await req.json();
   const { conversacion_id, message } = body;
   let convId = conversacion_id;
@@ -243,13 +257,17 @@ Deno.serve(async (req) => {
   const usados: string[] = [];
 
   try {
-    // Loop ReAct máximo 5 iteraciones
+    // Loop ReAct máximo 5 iteraciones.
+    // Cada iteración: el modelo decide si invoca una herramienta o entrega
+    // la respuesta final. Si invoca tool, ejecutamos, devolvemos el resultado
+    // como mensaje role="tool" y reentramos al loop.
     for (let iter = 0; iter < 5; iter++) {
       const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${LOVABLE_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: MODEL, messages, tools: TOOLS, tool_choice: "auto" }),
       });
+      // Manejo de errores específicos del gateway con mensaje útil al usuario.
       if (r.status === 429) throw new Error("Rate limit (429). Intenta de nuevo en unos segundos.");
       if (r.status === 402) throw new Error("Créditos AI agotados. Recarga en Lovable AI.");
       if (!r.ok) throw new Error(`AI Gateway: ${r.status} ${await r.text()}`);
@@ -276,7 +294,9 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Respuesta final
+      // Respuesta final: el modelo no pidió más herramientas. Persistimos
+      // el mensaje del asistente y cerramos el run con métricas completas
+      // (herramientas usadas + duración) para auditoría agéntica.
       await sb.from("mensajes").insert({
         conversacion_id: convId, role: "assistant", content: choice.content,
       });

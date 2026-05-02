@@ -7,6 +7,12 @@ const RESEND_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
 const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
+/**
+ * Calcula la severidad de una alerta combinando el tamaño del salto (delta)
+ * con el nivel absoluto del IRCA. Un delta pequeño puede ser crítico si el
+ * municipio ya estaba en zona roja; un delta grande es alta aunque venga de
+ * una base baja. Umbrales calibrados con la varianza histórica nacional.
+ */
 function severidadFromDelta(delta: number, score: number): "info" | "baja" | "media" | "alta" | "critica" {
   if (score >= 75 && delta >= 5) return "critica";
   if (delta >= 15) return "alta";
@@ -38,7 +44,9 @@ Deno.serve(async (req) => {
   }).select().single();
 
   try {
-    // Últimas 2 fechas
+    // Necesitamos las 2 fechas distintas más recientes para calcular el delta
+    // por municipio. Se piden 200 filas y se deduplican porque cada fecha
+    // contiene ~1.122 snapshots (uno por municipio).
     const { data: fechas } = await sb
       .from("irca_snapshots")
       .select("fecha")
@@ -60,6 +68,9 @@ Deno.serve(async (req) => {
     const { data: prev } = await sb.from("irca_snapshots").select("muni_code,irca_score").eq("fecha", ayer);
     const prevMap = new Map((prev ?? []).map((p) => [p.muni_code, Number(p.irca_score)]));
 
+    // Recorremos el snapshot de hoy y comparamos con el de ayer municipio
+    // por municipio. Solo se generan alertas para deltas POSITIVOS ≥ 3 pts
+    // (mejoras no se reportan como alerta; se podrían registrar aparte).
     const alertas: any[] = [];
     for (const a of actuales ?? []) {
       const before = prevMap.get(a.muni_code);
@@ -84,7 +95,10 @@ Deno.serve(async (req) => {
       await sb.from("alertas").insert(alertas);
     }
 
-    // Notificar suscriptores
+    // Notificación a suscriptores: cada suscripción define filtros (depto,
+    // muni, severidad mínima, umbral de IRCA). Solo si hay match enviamos
+    // email vía Resend. Si RESEND_API_KEY no está configurada, se omite
+    // silenciosamente (el sistema sigue funcionando sin email).
     const { data: subs } = await sb.from("suscripciones").select("*").eq("activa", true);
     let emails_enviados = 0;
     for (const s of subs ?? []) {
