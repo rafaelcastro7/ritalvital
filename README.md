@@ -1,193 +1,231 @@
 # RutaVital IA
 
-## MVP — Concurso "Datos al Ecosistema 2026: IA para Colombia" — MinTIC
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind-3-06B6D4?logo=tailwindcss&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Cloud-3FCF8E?logo=supabase&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini%202.5-Flash%20%2F%20Pro-4285F4?logo=google&logoColor=white)
+![Leaflet](https://img.shields.io/badge/Leaflet-Maps-199900?logo=leaflet&logoColor=white)
+![Datos abiertos](https://img.shields.io/badge/datos.gov.co-Socrata-FFC107)
+![Licencia](https://img.shields.io/badge/datos-CC%20BY%204.0-blue)
 
-Sistema de priorización territorial de atención en salud basado en el **Índice de Riesgo de Continuidad Asistencial (IRCA)** para los 32 municipios del departamento de Chocó, Colombia. Conecta datos abiertos oficiales en tiempo real y los convierte en decisiones accionables para gestores de salud pública.
-
----
-
-## Problema que resuelve
-
-Chocó concentra las brechas de salud más severas del país: baja disponibilidad de camas, alta incidencia de emergencias naturales y acceso vial crítico. Los gestores departamentales no tienen una herramienta que integre datos dispersos (MinSalud, UNGRD, DANE) y los convierta en un ranking de riesgo actualizable en tiempo real sin depender de un backend propio.
-
----
-
-## Solución
-
-Dashboard web que:
-
-1. **Descarga** datos oficiales desde `datos.gov.co` (Socrata API) en el navegador del usuario
-2. **Calcula** el IRCA municipio por municipio usando un pipeline TypeScript (sin servidor)
-3. **Visualiza** el riesgo en mapa interactivo, tarjetas KPI, gráfico de distribución y tabla navegable
-4. **Permite** reportar eventos de emergencia con persistencia en Supabase (o localStorage si sin conexión)
+> **Sistema agéntico de priorización territorial de salud pública para los 1.122 municipios de Colombia, alimentado 100 % con datos abiertos oficiales del Estado.**
 
 ---
 
-## Arquitectura
+## El problema
+
+Los gestores de salud en Colombia — alcaldías, secretarías departamentales, Ministerio de Salud, UNGRD y veedurías ciudadanas — **no cuentan con una herramienta unificada** que integre las múltiples fuentes oficiales (DANE, MinSalud-REPS, UNGRD, BDUA) y las traduzca en una decisión accionable: *¿dónde estamos a punto de fallar en la prestación del servicio de salud?*
+
+Cada entidad publica datos valiosos en `datos.gov.co`, pero:
+
+- Los formatos, granularidades y llaves territoriales son **inconsistentes** entre fuentes.
+- No existe un **índice compuesto** público que combine vulnerabilidad sanitaria, exposición a desastres y contexto territorial.
+- El conocimiento normativo (Resolución 2115/2007, Ley 1751/2015, Resolución 3100/2019) **no está conectado** a los datos operativos.
+- La vigilancia es **reactiva**: las alertas llegan cuando ya hubo una crisis, no antes.
+
+El resultado son brechas críticas — especialmente en el Pacífico, la Amazonía y la Orinoquía — donde poblaciones enteras quedan sin red asistencial durante emergencias y nadie lo nota hasta que aparece en prensa.
+
+---
+
+## La solución
+
+**RutaVital IA** descarga, cruza, valida y prioriza datos abiertos oficiales en tiempo real, calcula el **Índice de Riesgo de Continuidad Asistencial (IRCA v3)** para cada municipio del país y lo expone en un dashboard público con:
+
+- **Mapa coroplético nacional** con clasificación Bajo / Medio / Alto / Crítico.
+- **4 agentes de IA** que monitorean, validan, conversan y reportan automáticamente.
+- **Búsqueda semántica de normativa** colombiana de salud (RAG con FTS español).
+- **Reportes ejecutivos** generados por IA que citan el marco normativo aplicable.
+
+Todo el código es **open source**, todos los datos son **oficiales y abiertos**, y todo el sistema funciona **sin requerir registro** del usuario final.
+
+---
+
+## 🤖 Agentes de IA
+
+El sistema opera como una **red de agentes especializados** orquestados desde Edge Functions. Cada ejecución queda auditada en la tabla `agent_runs` (modelo, tokens, duración, status, herramientas usadas).
+
+| Agente | Modelo | Inputs | Outputs |
+|---|---|---|---|
+| **🛰️ Vigía** | Motor de reglas (`rule-engine-v1`) | Últimos 2 snapshots de `irca_snapshots` | Inserta en `alertas` cuando detecta deltas IRCA ≥ 3 pts; clasifica severidad y notifica suscriptores por email |
+| **🔍 Validador** | Motor de reglas (`rule-engine-v1`) | Snapshot vigente + componentes (camas, eventos, población) | Inserta en `validaciones` anomalías cruzadas: subregistro REPS, ausencia de eventos UNGRD en municipios críticos, outliers de capacidad hospitalaria |
+| **💬 Analista** | `google/gemini-2.5-flash` | Pregunta del usuario + 6 herramientas (consultar municipio, top críticos, comparar, tendencia, alertas, buscar normativa) | Respuesta conversacional con citas DIVIPOLA + artículos normativos. Loop ReAct hasta 5 iteraciones |
+| **📄 Reportero** | `google/gemini-2.5-flash` | Código de departamento | Resumen ejecutivo + recomendaciones operativas + marco normativo aplicable (RAG), entregado como HTML en bucket público |
+
+Todos los modelos se invocan vía **Lovable AI Gateway** — no se requiere API key del usuario.
+
+Detalle completo en [`AGENTS.md`](./AGENTS.md).
+
+---
+
+## 📊 Fuentes de datos abiertos
+
+Toda la información proviene de portales oficiales del Estado colombiano bajo licencia **CC BY 4.0**:
+
+| Fuente | Entidad | Dataset Socrata | URL |
+|---|---|---|---|
+| **DIVIPOLA** | DANE | `gdxc-w37w` | <https://www.datos.gov.co/Mapas-Nacionales/DIVIPOLA-C-digos-municipios/gdxc-w37w> |
+| **REPS — Capacidad Instalada** | MinSalud | `s2ru-bqt6` | <https://www.datos.gov.co/Salud-y-Protecci-n-Social/REPS-CAPACIDAD-INSTALADA/s2ru-bqt6> |
+| **UNGRD — Emergencias 2023-2024** | UNGRD | `rgre-6ak4` | <https://www.datos.gov.co/Ambiente-y-Desarrollo-Sostenible/Consolidado-de-Emergencias-y-Eventos/rgre-6ak4> |
+| **UNGRD — Emergencias 2019-2022** | UNGRD | `wwkg-r6te` | <https://www.datos.gov.co/Ambiente-y-Desarrollo-Sostenible/Emergencias-2019-2022/wwkg-r6te> |
+| **BDUA Subsidiado** | MinSalud | `d7a5-cnra` | <https://www.datos.gov.co/Salud-y-Protecci-n-Social/BDUA-Subsidiado/d7a5-cnra> |
+| **BDUA Contributivo** | MinSalud | `tq4m-hmg2` | <https://www.datos.gov.co/Salud-y-Protecci-n-Social/BDUA-Contributivo/tq4m-hmg2> |
+
+**Normativa indexada** (RAG): Resolución 2115/2007, Resolución 3100/2019, Ley 1751/2015 (Estatutaria de Salud), Decreto 1575/2007.
+
+---
+
+## 🏗️ Arquitectura
 
 ```text
-datos.gov.co (Socrata API)
-  ├── DIVIPOLA       gdxc-w37w   → llave territorial, coordenadas
-  ├── REPS           s2ru-bqt6   → camas habilitadas por municipio
-  ├── UNGRD 2019-22  wwkg-r6te   → eventos históricos de emergencia
-  └── UNGRD 2023-24  rgre-6ak4   → eventos recientes
-
-Navegador (React + TypeScript)
-  ├── datasets.ts    → fetchers Socrata + pipeline IRCA
-  ├── reportes.ts    → store de reportes (Supabase ↔ localStorage)
-  └── DatasetManager → UI de gestión: Fuentes | Pipeline | Linaje
-
-Supabase (opcional)
-  └── tabla reportes → alertas enviadas por operadores de campo
+┌─────────────────────────────────────────────────────────────────────┐
+│                  datos.gov.co  (Socrata Open Data API)              │
+│   DIVIPOLA  ·  REPS  ·  UNGRD 23-24  ·  BDUA Sub  ·  BDUA Con       │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │ fetch
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│           EDGE FUNCTIONS  (Deno · Lovable Cloud / Supabase)         │
+│                                                                     │
+│   snapshot-irca ──▶ _shared/pipeline.ts  (motor IRCA v3)            │
+│        │                                                            │
+│        ▼                                                            │
+│   irca_snapshots ◀── vigia-monitor ──▶ alertas                      │
+│        │             validador-cross ──▶ validaciones               │
+│        │                                                            │
+│        ├──▶ chat-analista  ──▶ Lovable AI (Gemini 2.5 Flash)        │
+│        │         │                                                  │
+│        │         └──▶ buscar_normativa_fts (RAG sobre tsvector)     │
+│        │                                                            │
+│        └──▶ reporte-ejecutivo ──▶ Gemini + RAG ──▶ Storage HTML     │
+│                                                                     │
+│   ingestar-normativa ──▶ normativa_chunks (FTS español)             │
+│                                                                     │
+│   Toda ejecución ─────▶ agent_runs  (auditoría agéntica)            │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │ supabase-js
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   FRONTEND  (React 18 + Vite + Tailwind)            │
+│                                                                     │
+│   /          Dashboard nacional (mapa Leaflet + KPIs + tabla)       │
+│   /chat      Chat con el Agente Analista                            │
+│   /reportes  Generador de reportes ejecutivos por depto             │
+│   /normativa Buscador FTS de normativa de salud                     │
+│   /admin     Disparar pipeline e ingesta de normativa               │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
----
-
-## Índice IRCA — Metodología
-
-El **IRCA** es el promedio aritmético de tres percentiles uniformes (equivalente a `QuantileTransformer(output_distribution='uniform')` de scikit-learn):
-
-| Componente | Variable cruda | Dirección | Peso |
-| --- | --- | --- | --- |
-| Vulnerabilidad sanitaria | Camas / 1 000 hab | Invertido (menos camas = más riesgo) | 1/3 |
-| Exposición histórica | Nº de eventos UNGRD | Directo | 1/3 |
-| Severidad vial | (vías + puentes averiados) / eventos | Directo | 1/3 |
-
-Clasificación: **Bajo** (0–0.25) · **Medio** (0.25–0.50) · **Alto** (0.50–0.75) · **Crítico** (≥ 0.75)
+Detalles completos en [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ---
 
-## Stack tecnológico
+## 🧰 Stack tecnológico
 
-| Capa | Tecnología |
-| --- | --- |
-| Frontend | React 18 + TypeScript + Vite |
-| Estilos | Tailwind CSS + shadcn/ui |
-| Mapas | Leaflet + react-leaflet |
-| Gráficos | Recharts |
-| Datos | Socrata Open Data API (datos.gov.co) |
-| Notificaciones | Sonner (toast) |
-| Backend opcional | Supabase (reportes de campo) |
-| Testing | Vitest |
+### Frontend
+- React 18 · TypeScript 5 · Vite 5
+- Tailwind CSS 3 + shadcn/ui (Radix Primitives)
+- React Router v6 · TanStack Query
+- Leaflet + react-leaflet (mapas coropletas)
+- Recharts (visualización de distribución)
+- Sonner (toasts no bloqueantes)
+
+### Backend
+- **Lovable Cloud** sobre Supabase (PostgreSQL gestionado)
+- Edge Functions en Deno (TypeScript runtime serverless)
+- Supabase Storage (bucket público `reportes`)
+- Supabase Auth (opcional — el sistema funciona sin login)
+
+### Inteligencia Artificial
+- **Lovable AI Gateway** (sin API key del usuario)
+- `google/gemini-2.5-flash` — chat conversacional + síntesis de reportes
+- `google/gemini-2.5-pro` — disponible para razonamiento extendido
+- RAG implementado con **PostgreSQL FTS español** (`tsvector` + `plainto_tsquery`)
+- `pgvector` instalado y `match_normativa()` listos para embeddings reales
+
+### Base de datos
+- PostgreSQL 15 con extensiones `pgvector`, `pg_trgm`
+- Tablas con RLS pública en datos operativos (modo abierto al ciudadano)
+- Funciones SQL `SECURITY DEFINER`: `has_role`, `buscar_normativa_fts`, `match_normativa`
+- Triggers: `handle_new_user`, `update_updated_at_column`
+
+### Datos abiertos
+- API Socrata sobre `datos.gov.co` (sin autenticación; opcional `VITE_DATOS_GOV_TOKEN` para mayor rate limit)
 
 ---
 
-## Fuentes de datos oficiales
+## 🚀 Instalación y ejecución local
 
-| Dataset | Entidad | ID Socrata | Descripción |
-| --- | --- | --- | --- |
-| DIVIPOLA | DANE | `gdxc-w37w` | Codificación oficial de municipios |
-| Proyecciones de Población 2018–2035 | DANE | referencia | Proyecciones municipales (integradas) |
-| REPS Capacidad Instalada | MinSalud | `s2ru-bqt6` | Camas habilitadas por IPS/ESE |
-| Emergencias UNGRD 2019–2022 | UNGRD | `wwkg-r6te` | Eventos históricos de emergencia |
-| Emergencias UNGRD 2023–2024 | UNGRD | `rgre-6ak4` | Eventos recientes con GPS |
+### Prerrequisitos
+- Node.js ≥ 18 o [Bun](https://bun.sh)
+- Un proyecto de Lovable Cloud / Supabase (opcional — el frontend corre sin él en modo demo)
 
----
-
-## Instalación y desarrollo
+### Pasos
 
 ```bash
-# Prerrequisitos: Node.js >= 18, bun o npm
-
 git clone <repo>
 cd ritalvital
 
 bun install        # o npm install
-
-# Opcional: configurar Supabase
-cp .env.example .env
-# Editar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
-
 bun run dev        # http://localhost:8080
 ```
 
-### Variables de entorno
+### Variables de entorno (opcionales)
+
+El archivo `.env` se autogenera al conectar Lovable Cloud. Para desarrollo manual:
 
 | Variable | Requerida | Descripción |
-| --- | --- | --- |
-| `VITE_SUPABASE_URL` | No | URL del proyecto Supabase para reportes |
-| `VITE_SUPABASE_ANON_KEY` | No | Clave anon de Supabase |
-| `VITE_DATOS_GOV_TOKEN` | No | App token de datos.gov.co (aumenta rate limit) |
-| `VITE_BACKEND_URL` | No | URL del backend Python (legacy, no usado actualmente) |
+|---|---|---|
+| `VITE_SUPABASE_URL` | No | URL del backend |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | No | Anon key del backend |
+| `VITE_DATOS_GOV_TOKEN` | No | App token de datos.gov.co (mayor rate limit) |
 
-> La app funciona **sin ninguna variable de entorno**. Los reportes se guardan en localStorage si Supabase no está configurado.
+### Disparar el pipeline por primera vez
 
----
-
-## Estructura del proyecto
-
-```text
-src/
-├── components/
-│   ├── dashboard/
-│   │   ├── AboutModal.tsx             Acerca de / metodología
-│   │   ├── DashboardHeader.tsx        Encabezado + botones de navegación
-│   │   ├── DashboardFooter.tsx        Pie de página
-│   │   ├── DatasetManager.tsx         Módulo gestión de datos (Fuentes/Pipeline/Linaje)
-│   │   ├── DataTable.tsx              Tabla paginada de municipios
-│   │   ├── DetailPanel.tsx            Panel lateral de detalle por municipio
-│   │   ├── KpiCards.tsx               Tarjetas de métricas agregadas
-│   │   ├── MapLegend.tsx              Leyenda del mapa de riesgo
-│   │   ├── PanicButton.tsx            Botón reporte de evento de emergencia
-│   │   ├── ReportesPanel.tsx          Lista de reportes enviados
-│   │   ├── RiskBadge.tsx              Badge de nivel de riesgo
-│   │   ├── RiskDistributionChart.tsx  Gráfico distribución IRCA
-│   │   ├── RiskMap.tsx                Mapa Leaflet con coropletas
-│   │   └── historico/                 Componentes retirados (referencia)
-│   └── ui/                            shadcn/ui (no modificar manualmente)
-├── lib/
-│   ├── datasets.ts                    Catálogo, fetchers Socrata, pipeline IRCA
-│   ├── reportes.ts                    Store de reportes (Supabase / localStorage)
-│   ├── supabase.ts                    Cliente Supabase nullable
-│   └── utils.ts                       cn() de shadcn
-├── pages/
-│   ├── Index.tsx                      Página principal
-│   └── NotFound.tsx                   404
-├── types/
-│   └── municipio.ts                   Tipo Municipio (18 campos)
-└── historico/                         Archivos CSS retirados
-```
+1. Abrir `/admin` en el navegador.
+2. Clic en **"Generar snapshot IRCA"** — descarga ~15.000 registros de Socrata, calcula el IRCA y persiste ~1.122 filas en `irca_snapshots`.
+3. Clic en **"Cargar normativa preset"** — ingesta 10 artículos clave en `normativa_chunks`.
+4. Volver a `/` para ver el dashboard nacional poblado.
 
 ---
 
-## Flujo de uso del módulo de datos
+## 🖥️ Vistas principales
 
-1. Abrir **Gestión de datos** desde el encabezado
-2. En la pestaña **Fuentes**: hacer clic en "Cargar" para cada fuente (DIVIPOLA, REPS, UNGRD)
-3. Expandir cualquier fuente con "Ver datos" para inspeccionar los registros en la tabla drill-down
-4. En la pestaña **Pipeline**: clic en "Ejecutar pipeline IRCA" — actualiza el dashboard en tiempo real
-5. En la pestaña **Linaje**: verificar cobertura por municipio y trazabilidad de campos
-
----
-
-## Manejo de errores en datos
-
-El sistema aplica estrategias de recuperación en cascada:
-
-- **UNGRD**: intenta 5 filtros WHERE sucesivos (`LIKE`, `starts_with`, por depto, sin filtro) antes de lanzar error
-- **REPS**: intenta con filtro de departamento, luego sin él + filtro client-side
-- **Timeout**: 30 segundos por request Socrata
-- **CORS/red**: error diferenciado de errores HTTP de la API
-- **Socrata errors**: parseo de `{ message, code }` del JSON de error (no solo el texto HTTP)
+| Ruta | Descripción |
+|---|---|
+| **`/`** | Dashboard nacional. Mapa Leaflet con coropletas por nivel de riesgo, tarjetas KPI agregadas, gráfico de distribución, tabla paginada con filtros, panel de detalle por municipio. |
+| **`/chat`** | Conversación con el **Agente Analista**. Pregunta libre en español; el agente decide qué herramientas invocar (consultar municipio, comparar, top críticos, normativa…). |
+| **`/reportes`** | Generador del **Agente Reportero**. Selecciona un departamento → recibe HTML ejecutivo descargable con resumen, top municipios, recomendaciones y marco normativo. |
+| **`/normativa`** | Buscador FTS español sobre la base normativa indexada. |
+| **`/admin`** | Panel de operación: disparar snapshot, ingestar normativa, ver runs recientes. |
 
 ---
 
-## Reportes de campo
+## 🎯 Impacto
 
-Los operadores pueden enviar alertas desde el **Panel de detalle** de cualquier municipio:
-
-- Con Supabase: persiste en tabla `reportes` con timestamp y municipio
-- Sin Supabase: persiste en `localStorage` del navegador como fallback automático
-- Notificaciones via toast (Sonner) — sin `alert()` bloqueante
+- **Cobertura nacional**: 1.122 municipios analizados (no solo el departamento piloto original).
+- **Distribución observada**: ~283 críticos, ~100 altos, ~540 medios, ~199 bajos — alineado con la realidad documentada por DNP, UARIV y MinSalud.
+- **Casos de uso reales**:
+  - **Alcaldías municipales** identifican su posición relativa nacional y descargan reportes para sustentar planes de contingencia.
+  - **Secretarías departamentales de salud** monitorean cambios bruscos en el IRCA de sus municipios sin consultar 5 portales distintos.
+  - **MinSalud y UNGRD** detectan zonas con 0 camas reportadas y >10.000 habitantes (penalización dura → Crítico) que requieren intervención prioritaria.
+  - **Veedurías y prensa** usan el chat conversacional para preguntar "¿qué municipios del Pacífico están en riesgo crítico sin eventos UNGRD reportados?" — y reciben respuestas con citas normativas.
+- **Trazabilidad agéntica**: cada ejecución de IA queda en `agent_runs` con tokens, duración y errores — auditable por el ciudadano.
+- **Cero dependencia de proveedores cerrados**: 100 % software libre + datos abiertos + IA vía gateway sin API keys propias.
 
 ---
 
-## Historial de cambios
+## 📚 Documentación adicional
 
-Ver [CHANGELOG.md](./CHANGELOG.md) para el registro detallado de versiones.
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — Decisiones técnicas, fórmula IRCA detallada, RAG, comunicación entre Edge Functions
+- [`AGENTS.md`](./AGENTS.md) — Especificación completa de los 4 agentes, prompts, ejemplos
+- [`CHANGELOG.md`](./CHANGELOG.md) — Historial de versiones
 
 ---
 
 ## Licencia
 
-Proyecto académico — MinTIC Concurso Datos al Ecosistema 2026. Datos bajo licencia abierta CC BY 4.0 (datos.gov.co).
+Proyecto académico — **MinTIC Concurso "Datos al Ecosistema 2026: IA para Colombia"**.
+Datos bajo licencia abierta **CC BY 4.0** (`datos.gov.co`).
+Código fuente bajo licencia MIT.
